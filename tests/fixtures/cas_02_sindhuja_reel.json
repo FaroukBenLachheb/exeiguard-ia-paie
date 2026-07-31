@@ -1,0 +1,68 @@
+{
+  "id": "cas_02_sindhuja_reel",
+  "description": "Cas réel - période d'essai + clause formation + remarque libre (changement d'adresse)",
+  "contrat": {
+    "matricule": null,
+    "prenom": "Sindhuja",
+    "nom": null,
+    "nationalite": "Indienne",
+    "adresse": null,
+    "date_naissance": null,
+    "nir": null,
+    "poste": "Consultante GRC",
+    "date_effet": "2025-11-03",
+    "type_contrat": "CDI",
+    "convention_collective": "SYNTEC",
+    "statut": "CADRE",
+    "position": "3.2",
+    "coefficient": 210,
+    "remuneration_annuelle_brute": 70000.0,
+    "remuneration_mensuelle_brute": 5833.0,
+    "heures_mensuelles": 151.67,
+    "periode_essai_mois": 4,
+    "periode_essai_renouvelable": true,
+    "rtt_par_an": 10,
+    "periode_reference_conges": "01/06 au 31/05",
+    "clause_non_concurrence": true,
+    "duree_non_concurrence_mois": 12,
+    "indemnite_non_concurrence_mois_salaire": 6,
+    "clause_formation": true,
+    "duree_engagement_formation_mois": 12,
+    "lieu_travail": "au sein de la société ou en télétravail",
+    "delai_justification_absence_heures": 24,
+    "organisme_justification_absence": "H Cube",
+    "date_signature": "2025-10-23",
+    "lieu_signature": "Paris"
+  },
+  "evp": {
+    "periode": "2026-06-01",
+    "matricule": null,
+    "nom": null,
+    "prenom": "Sindhuja",
+    "poste": "Consultante GRC",
+    "type_contrat": "CDI",
+    "debut_contrat": "2025-11-03",
+    "fin_contrat": null,
+    "heure_mensuel": null,
+    "salaire_an": 70000.0,
+    "mutuelle": "Avec enfants",
+    "nb_ticket_restaurant": 16,
+    "pass_navigo": true,
+    "prime": null,
+    "acompte": null,
+    "heures_sup": null,
+    "absences": [
+      {
+        "type": "RTT",
+        "nb_jours": 1.0,
+        "dates_brutes": "07/05/2026"
+      },
+      {
+        "type": "RTT",
+        "nb_jours": 1.0,
+        "dates_brutes": "15/05/2026"
+      }
+    ],
+    "remarques": "Changement d'adresse"
+  }
+}

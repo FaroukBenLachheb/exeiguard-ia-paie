@@ -1,0 +1,63 @@
+{
+  "id": "cas_08_conge_sans_solde",
+  "description": "Cas avec congé sans solde",
+  "contrat": {
+    "matricule": null,
+    "prenom": "Patrick",
+    "nom": null,
+    "nationalite": "Française",
+    "adresse": null,
+    "date_naissance": null,
+    "nir": null,
+    "poste": "Consultant Fonctionnel",
+    "date_effet": "2022-09-01",
+    "type_contrat": "CDI",
+    "convention_collective": "SYNTEC",
+    "statut": "CADRE",
+    "position": "2.3",
+    "coefficient": 150,
+    "remuneration_annuelle_brute": 48000.0,
+    "remuneration_mensuelle_brute": 4000.0,
+    "heures_mensuelles": 151.67,
+    "periode_essai_mois": null,
+    "periode_essai_renouvelable": false,
+    "rtt_par_an": 10,
+    "periode_reference_conges": "01/06 au 31/05",
+    "clause_non_concurrence": true,
+    "duree_non_concurrence_mois": 12,
+    "indemnite_non_concurrence_mois_salaire": 6,
+    "clause_formation": false,
+    "duree_engagement_formation_mois": 12,
+    "lieu_travail": "au sein de la société ou en télétravail",
+    "delai_justification_absence_heures": 24,
+    "organisme_justification_absence": "H Cube",
+    "date_signature": "2022-08-20",
+    "lieu_signature": "Paris"
+  },
+  "evp": {
+    "periode": "2026-06-01",
+    "matricule": null,
+    "nom": null,
+    "prenom": "Patrick",
+    "poste": "Consultant Fonctionnel",
+    "type_contrat": "CDI",
+    "debut_contrat": "2022-09-01",
+    "fin_contrat": null,
+    "heure_mensuel": null,
+    "salaire_an": 48000.0,
+    "mutuelle": "Seul",
+    "nb_ticket_restaurant": 8,
+    "pass_navigo": true,
+    "prime": null,
+    "acompte": null,
+    "heures_sup": null,
+    "absences": [
+      {
+        "type": "CONGE_SANS_SOLDE",
+        "nb_jours": 10.0,
+        "dates_brutes": "01/06 au 10/06/2026"
+      }
+    ],
+    "remarques": null
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "id": "cas_09_absence_injustifiee",
+  "description": "Cas limite - absence injustifiée, doit déclencher une alerte Compliance",
+  "contrat": {
+    "matricule": null,
+    "prenom": "Maurice",
+    "nom": null,
+    "nationalite": "Française",
+    "adresse": null,
+    "date_naissance": null,
+    "nir": null,
+    "poste": "Technicien Support",
+    "date_effet": "2025-05-12",
+    "type_contrat": "CDI",
+    "convention_collective": "SYNTEC",
+    "statut": "CADRE",
+    "position": "1.2",
+    "coefficient": 100,
+    "remuneration_annuelle_brute": 32000.0,
+    "remuneration_mensuelle_brute": 2666.67,
+    "heures_mensuelles": 151.67,
+    "periode_essai_mois": 2,
+    "periode_essai_renouvelable": false,
+    "rtt_par_an": 10,
+    "periode_reference_conges": "01/06 au 31/05",
+    "clause_non_concurrence": true,
+    "duree_non_concurrence_mois": 12,
+    "indemnite_non_concurrence_mois_salaire": 6,
+    "clause_formation": false,
+    "duree_engagement_formation_mois": 12,
+    "lieu_travail": "au sein de la société ou en télétravail",
+    "delai_justification_absence_heures": 24,
+    "organisme_justification_absence": "H Cube",
+    "date_signature": "2025-05-01",
+    "lieu_signature": "Paris"
+  },
+  "evp": {
+    "periode": "2026-06-01",
+    "matricule": null,
+    "nom": null,
+    "prenom": "Maurice",
+    "poste": "Technicien Support",
+    "type_contrat": "CDI",
+    "debut_contrat": "2025-05-12",
+    "fin_contrat": null,
+    "heure_mensuel": null,
+    "salaire_an": 32000.0,
+    "mutuelle": "Seul",
+    "nb_ticket_restaurant": 16,
+    "pass_navigo": false,
+    "prime": null,
+    "acompte": null,
+    "heures_sup": null,
+    "absences": [
+      {
+        "type": "INJUSTIFIEE",
+        "nb_jours": 1.0,
+        "dates_brutes": "20/06/2026"
+      }
+    ],
+    "remarques": null
+  }
+}
