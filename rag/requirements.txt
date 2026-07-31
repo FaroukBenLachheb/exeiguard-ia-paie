@@ -1,0 +1,2 @@
+# requirements.txt — service rag
+# Dépendances à ajouter phase par phase.

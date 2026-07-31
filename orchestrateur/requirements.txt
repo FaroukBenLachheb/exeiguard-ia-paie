@@ -1,0 +1,2 @@
+# requirements.txt — service orchestrateur
+# Dépendances à ajouter phase par phase.
