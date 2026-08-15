@@ -82,5 +82,30 @@ services:
       retries: 5
       start_period: 5s
 
+  llm-server:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_models:/root/.ollama
+    expose:
+      - "11434"
+    # Le port 11434 n'est publie sur le host ni ouvert dans le firewall :
+    # seuls les autres conteneurs du reseau docker-compose y accedent
+    # (endpoint compatible OpenAI sur http://llm-server:11434/v1, voir
+    # llm/README.md).
+    #
+    # Reservation GPU : actif uniquement sur la VM GPU cible (OVH, NVIDIA
+    # L4 24 Go) avec le NVIDIA Container Toolkit installe sur l'hote. Reste
+    # commente ici car il n'y a pas de GPU/toolkit en local : le decommenter
+    # ferait echouer `docker compose up` en dev. Voir docker-compose.yml
+    # (Phase 9) pour la version active sur la VM cible.
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           capabilities: [gpu]
+    #           count: 1
+
 volumes:
   postgres_data:
+  ollama_models:

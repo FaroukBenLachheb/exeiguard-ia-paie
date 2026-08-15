@@ -1,0 +1,33 @@
+# docker-compose.yml — squelette de deploiement VM GPU (Phase 9)
+#
+# Composera l'environnement cible sur la VM OVH (GPU NVIDIA L4 24 Go). Les
+# autres services applicatifs (orchestrateur, extracteur-evp,
+# compliance-validation, integration-sage, postgres, ...) seront ajoutes
+# ici phase par phase, sur le meme modele que docker-compose.dev.yml.
+#
+# Seul le service llm-server est deja defini : contrairement au dev local
+# (docker-compose.dev.yml, ou la reservation GPU reste commentee faute de
+# GPU/NVIDIA Container Toolkit en local), elle est active ici car cette VM
+# est la cible reelle et dispose du toolkit installe.
+
+services:
+  llm-server:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_models:/root/.ollama
+    expose:
+      - "11434"
+    # Port 11434 non publie sur le host / non ouvert dans le firewall de la
+    # VM : seuls les autres conteneurs du reseau docker-compose y accedent
+    # (endpoint compatible OpenAI sur http://llm-server:11434/v1, voir
+    # llm/README.md).
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+              count: 1
+
+volumes:
+  ollama_models:
