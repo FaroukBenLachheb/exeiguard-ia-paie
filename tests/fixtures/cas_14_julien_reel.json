@@ -1,0 +1,63 @@
+{
+  "id": "cas_14_julien_reel",
+  "description": "Cas réel - sans période d'essai, reprise d'ancienneté ; incohérence heures contrat/bulletin ; qualification bulletin sans coefficient affiché (contrairement au contrat) ; EVP avec 0 ticket restaurant",
+  "contrat": {
+    "matricule": null,
+    "prenom": "Julien",
+    "nom": null,
+    "nationalite": null,
+    "adresse": null,
+    "date_naissance": null,
+    "nir": null,
+    "poste": "Ingénieur Système Windows",
+    "date_effet": "2025-07-01",
+    "type_contrat": "CDI",
+    "convention_collective": "SYNTEC",
+    "statut": "CADRE",
+    "position": "2.1",
+    "coefficient": 275,
+    "remuneration_annuelle_brute": 46000.0,
+    "remuneration_mensuelle_brute": 3833.0,
+    "heures_mensuelles": 139.0,
+    "periode_essai_mois": null,
+    "periode_essai_renouvelable": false,
+    "rtt_par_an": 10,
+    "periode_reference_conges": "01/06 au 31/05",
+    "clause_non_concurrence": true,
+    "duree_non_concurrence_mois": 12,
+    "indemnite_non_concurrence_mois_salaire": 6,
+    "clause_formation": false,
+    "duree_engagement_formation_mois": 12,
+    "lieu_travail": "au sein de la société ou en télétravail",
+    "delai_justification_absence_heures": 24,
+    "organisme_justification_absence": "H Cube",
+    "date_signature": "2025-06-30",
+    "lieu_signature": "Paris"
+  },
+  "evp": {
+    "periode": "2026-06-01",
+    "matricule": null,
+    "nom": null,
+    "prenom": "Julien",
+    "poste": "Ingénieur Système Windows",
+    "type_contrat": "CDI",
+    "debut_contrat": "2025-07-01",
+    "fin_contrat": null,
+    "heure_mensuel": null,
+    "salaire_an": 46000.0,
+    "mutuelle": null,
+    "nb_ticket_restaurant": 0,
+    "pass_navigo": false,
+    "prime": null,
+    "acompte": null,
+    "heures_sup": null,
+    "absences": [
+      {
+        "type": "RTT",
+        "nb_jours": 3.0,
+        "dates_brutes": "22, 25 et 26/05"
+      }
+    ],
+    "remarques": null
+  }
+}

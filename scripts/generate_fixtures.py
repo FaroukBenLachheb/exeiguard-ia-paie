@@ -90,7 +90,9 @@ def _contrat_de_base(**overrides) -> dict:
 
 
 def cas_reels() -> list[dict]:
-    """Les 2 cas réels déjà validés dans shared/tests/test_schemas.py."""
+    """Les 5 cas réels : Didier/Sindhuja (validés dans shared/tests/test_schemas.py)
+    + Jordan/Julien/Karim (data-confidentielles/EXEIGUARD-DATA-TEST/, non
+    versionnée, cf. .gitignore — seules les valeurs extraites atterrissent ici)."""
     return [
         {
             "id": "cas_01_didier_reel",
@@ -161,6 +163,181 @@ def cas_reels() -> list[dict]:
                     AbsencePeriode(type=TypeAbsence.RTT, nb_jours=1, dates_brutes="15/05/2026"),
                 ],
                 remarques="Changement d'adresse",
+            ).model_dump(mode="json"),
+        },
+        {
+            "id": "cas_13_jordan_reel",
+            # Matricule bulletin "0006" (non modélisé côté ContratTravail/EVPMensuel
+            # à ce stade : cf. docstring de shared/schemas/evp.py sur le fallback
+            # nom/prénom côté EVP, et ContratTravail.matricule "relié via
+            # bulletin/EVP" — utile pour la future fixture BulletinSalaire).
+            "description": (
+                "Cas réel - sans période d'essai ni clause formation formelle "
+                "(mention informelle non contractuelle de 2 formations 2025, non "
+                "modélisée) ; incohérence heures contrat/bulletin ; prime en texte "
+                "libre non extraite dans le champ structuré"
+            ),
+            "contrat": ContratTravail(
+                **_contrat_de_base(
+                    prenom="Jordan",
+                    poste="Administrateur Système et Poste de Travail",
+                    date_effet=date(2025, 7, 1),
+                    position="2.2",
+                    coefficient=130,
+                    remuneration_annuelle_brute=42000,
+                    remuneration_mensuelle_brute=3500,
+                    periode_essai_mois=None,
+                    # Le contrat indique "139.00 heures par mois soit 38h30
+                    # hebdomadaire", mais le bulletin réel utilise 151,67h comme
+                    # tous les autres salariés. Incohérence RÉELLE volontairement
+                    # préservée telle quelle (pas de "correction" vers 151.67) :
+                    # ce cas sert de fixture pour une future règle RG-0X du Rule
+                    # Engine qui contrôlera la cohérence heures contrat/bulletin.
+                    heures_mensuelles=139.00,
+                    # PAS de clause_formation=True ici : la mention "deux
+                    # formations en 2025" sur les documents réels est informelle,
+                    # elle ne correspond à aucun article contractuel formel
+                    # (contrairement à Sindhuja où la clause est un article dédié).
+                    date_signature=date(2025, 6, 30),
+                    lieu_signature="Paris",
+                )
+            ).model_dump(mode="json"),
+            "evp": EVPMensuel(
+                periode=date(2026, 6, 1),
+                prenom="Jordan",
+                poste="Administrateur Système et Poste de Travail",
+                type_contrat=TypeContrat.CDI,
+                debut_contrat=date(2025, 7, 1),
+                salaire_an=42000,
+                nb_ticket_restaurant=18,
+                pass_navigo=True,
+                # La colonne PRIME structurée du fichier EVP réel est restée
+                # vide ; le montant n'apparaît qu'en texte libre dans les
+                # remarques. Volontairement NON extrait dans `prime` (on ne
+                # reconstruit pas une donnée structurée que la source ne
+                # fournit pas structurée).
+                remarques="Prime Astreintes : 450 €",
+            ).model_dump(mode="json"),
+        },
+        {
+            "id": "cas_14_julien_reel",
+            # Matricule bulletin "0005".
+            "description": (
+                "Cas réel - sans période d'essai, reprise d'ancienneté ; "
+                "incohérence heures contrat/bulletin ; qualification bulletin "
+                "sans coefficient affiché (contrairement au contrat) ; EVP avec "
+                "0 ticket restaurant"
+            ),
+            "contrat": ContratTravail(
+                **_contrat_de_base(
+                    prenom="Julien",
+                    poste="Ingénieur Système Windows",
+                    date_effet=date(2025, 7, 1),
+                    position="2.1",
+                    coefficient=275,
+                    remuneration_annuelle_brute=46000,
+                    remuneration_mensuelle_brute=3833,
+                    periode_essai_mois=None,
+                    # Même incohérence heures contrat/bulletin que Jordan
+                    # ci-dessus (139h/38h30 contrat vs 151,67h bulletin réel,
+                    # non corrigée) : renforce la fixture pour la future règle
+                    # RG-0X.
+                    heures_mensuelles=139.00,
+                    date_signature=date(2025, 6, 30),
+                    lieu_signature="Paris",
+                )
+            ).model_dump(mode="json"),
+            # NB : le bulletin réel affiche la qualification "Cadre Position 2.1"
+            # SANS coefficient (contrairement aux autres bulletins, qui
+            # affichent "Position X.X / Coeff - YYY", cf. BulletinSalaire.
+            # qualification dans shared/schemas/bulletin.py), alors que le
+            # contrat mentionne bien le coefficient 275 ci-dessus. Incohérence
+            # d'affichage contrat/bulletin non modélisable ici (pas de fixture
+            # BulletinSalaire à ce stade) mais bon cas de test Compliance futur.
+            #
+            # NB : date_premiere_entree réelle 2023-04-03, différente de
+            # date_entree/date_effet 2025-07-01 (reprise d'ancienneté, comme
+            # Didier) — champ porté par BulletinSalaire.date_premiere_entree,
+            # pas encore par ContratTravail/EVPMensuel ; à reporter lors de la
+            # création des fixtures BulletinSalaire.
+            "evp": EVPMensuel(
+                periode=date(2026, 6, 1),
+                prenom="Julien",
+                poste="Ingénieur Système Windows",
+                type_contrat=TypeContrat.CDI,
+                debut_contrat=date(2025, 7, 1),
+                salaire_an=46000,
+                # Valeur à zéro volontairement conservée (vérifie que le champ
+                # accepte 0, cf. Field(ge=0, default=0) dans EVPMensuel).
+                nb_ticket_restaurant=0,
+                pass_navigo=False,
+                absences=[
+                    AbsencePeriode(
+                        type=TypeAbsence.RTT, nb_jours=3, dates_brutes="22, 25 et 26/05"
+                    )
+                ],
+            ).model_dump(mode="json"),
+        },
+        {
+            "id": "cas_15_karim_reel",
+            # Matricule bulletin "0003".
+            "description": (
+                "Cas réel - date d'effet à formulation conditionnelle, sans "
+                "période d'essai, reprise d'ancienneté ; incohérence heures "
+                "contrat/bulletin ; prime en texte libre non extraite dans le "
+                "champ structuré"
+            ),
+            "contrat": ContratTravail(
+                **_contrat_de_base(
+                    prenom="Karim",
+                    poste="Architecte Cloud",
+                    # Le contrat n'indique pas une date ferme mais la formulation
+                    # conditionnelle "au plus tard le 01 juillet 2025" (différente
+                    # des autres contrats, qui donnent une date d'effet sèche).
+                    # Interprétée ici comme date_effet=2025-07-01 (date plafond).
+                    # Bon cas de test pour la robustesse du futur parsing de
+                    # dates (Extracteur EVP, Phase 4) sur des formulations non
+                    # standard.
+                    date_effet=date(2025, 7, 1),
+                    position="3.1",
+                    coefficient=170,
+                    # Le contrat mentionne un salaire annuel arrondi "~65 000 €"
+                    # mais le salaire de base mensuel qui y figure explicitement
+                    # est 5 418 € (5418 x 12 = 65016). On retient ici la valeur
+                    # mensuelle exacte (donnée de paie faisant foi) et on
+                    # recalcule l'annuel en conséquence pour rester cohérent
+                    # avec le validateur ContratTravail.coherence_remuneration_
+                    # mensuelle (tolérance ±1 €) — décision confirmée avec le
+                    # superviseur plutôt que de corriger le mensuel vers 5416.67.
+                    remuneration_annuelle_brute=65016,
+                    remuneration_mensuelle_brute=5418,
+                    periode_essai_mois=None,
+                    # Même incohérence heures contrat/bulletin que Jordan/Julien
+                    # ci-dessus (139h/38h30 contrat vs 151,67h bulletin réel, non
+                    # corrigée).
+                    heures_mensuelles=139.00,
+                    date_signature=date(2025, 6, 30),
+                    lieu_signature="Paris",
+                )
+            ).model_dump(mode="json"),
+            # NB : date_premiere_entree réelle 2023-01-02 (reprise d'ancienneté,
+            # comme Didier/Julien) — cf. commentaire équivalent sur le cas
+            # Julien ci-dessus, même limitation (champ porté par BulletinSalaire
+            # uniquement à ce stade).
+            "evp": EVPMensuel(
+                periode=date(2026, 6, 1),
+                prenom="Karim",
+                poste="Architecte Cloud",
+                type_contrat=TypeContrat.CDI,
+                debut_contrat=date(2025, 7, 1),
+                salaire_an=65016,
+                nb_ticket_restaurant=18,
+                pass_navigo=True,
+                # Même pattern que Jordan : la colonne PRIME structurée du
+                # fichier EVP réel est vide, le montant n'apparaît qu'en texte
+                # libre dans les remarques. Volontairement NON extrait dans
+                # `prime`.
+                remarques="Prime Durée de mission 1500 € Brut",
             ).model_dump(mode="json"),
         },
     ]
