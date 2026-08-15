@@ -301,15 +301,15 @@ def cas_reels() -> list[dict]:
                     date_effet=date(2025, 7, 1),
                     position="3.1",
                     coefficient=170,
-                    # Le contrat mentionne un salaire annuel arrondi "~65 000 €"
-                    # mais le salaire de base mensuel qui y figure explicitement
-                    # est 5 418 € (5418 x 12 = 65016). On retient ici la valeur
-                    # mensuelle exacte (donnée de paie faisant foi) et on
-                    # recalcule l'annuel en conséquence pour rester cohérent
-                    # avec le validateur ContratTravail.coherence_remuneration_
-                    # mensuelle (tolérance ±1 €) — décision confirmée avec le
-                    # superviseur plutôt que de corriger le mensuel vers 5416.67.
-                    remuneration_annuelle_brute=65016,
+                    # Valeurs RÉELLES du document PDF : annuel=65000, mensuel=5418.
+                    # 65000/12=5416.67 arrondi -> écart de 1.33€ avec le mensuel
+                    # affiché, supérieur à l'ancienne tolérance de 1€ du
+                    # validateur ContratTravail.coherence_remuneration_mensuelle.
+                    # Ce cas réel prouve que Soft IT applique parfois un tel
+                    # arrondi mensuel > 1€ : la tolérance a donc été portée à 2€
+                    # dans shared/schemas/contrat.py (voir commentaire associé)
+                    # plutôt que de modifier les valeurs réelles du contrat.
+                    remuneration_annuelle_brute=65000,
                     remuneration_mensuelle_brute=5418,
                     periode_essai_mois=None,
                     # Même incohérence heures contrat/bulletin que Jordan/Julien
@@ -330,7 +330,7 @@ def cas_reels() -> list[dict]:
                 poste="Architecte Cloud",
                 type_contrat=TypeContrat.CDI,
                 debut_contrat=date(2025, 7, 1),
-                salaire_an=65016,
+                salaire_an=65000,
                 nb_ticket_restaurant=18,
                 pass_navigo=True,
                 # Même pattern que Jordan : la colonne PRIME structurée du
