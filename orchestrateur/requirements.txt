@@ -1,2 +1,5 @@
-# requirements.txt — service orchestrateur
-# Dépendances à ajouter phase par phase.
+fastapi>=0.110,<1
+uvicorn[standard]>=0.29
+sqlalchemy>=2.0
+psycopg2-binary>=2.9
+pydantic>=2.7,<3

@@ -1,2 +1,2 @@
-# requirements.txt — service extracteur-evp
-# Dépendances à ajouter phase par phase.
+fastapi>=0.110,<1
+uvicorn[standard]>=0.29

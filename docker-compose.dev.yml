@@ -1,2 +1,86 @@
-# docker-compose.dev.yml — squelette d'environnement de développement
-# Les services seront définis phase par phase.
+# docker-compose.dev.yml — environnement de developpement
+#
+# Sert a valider que chaque service se construit et demarre correctement
+# en local, en preparation de l'integration sur la VM GPU (pas de GPU en
+# local : la logique LLM/RAG n'est pas branchee ici). La logique metier
+# des services extracteur-evp / compliance-validation / integration-sage
+# n'est pas encore implementee (phases D.4+) : ils exposent uniquement
+# GET /health pour l'instant, ce qui permet a toute la stack de demarrer
+# sans erreur des maintenant.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-exeiguard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_local}
+      POSTGRES_DB: ${POSTGRES_DB:-exeiguard_poc}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-exeiguard} -d ${POSTGRES_DB:-exeiguard_poc}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  orchestrateur:
+    build:
+      context: .
+      dockerfile: orchestrateur/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-exeiguard}:${POSTGRES_PASSWORD:-changeme_local}@postgres:5432/${POSTGRES_DB:-exeiguard_poc}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  extracteur-evp:
+    build:
+      context: .
+      dockerfile: extracteur-evp/Dockerfile
+    ports:
+      - "8001:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  compliance-validation:
+    build:
+      context: .
+      dockerfile: compliance-validation/Dockerfile
+    ports:
+      - "8002:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  integration-sage:
+    build:
+      context: .
+      dockerfile: integration-sage/Dockerfile
+    ports:
+      - "8003:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+volumes:
+  postgres_data:
