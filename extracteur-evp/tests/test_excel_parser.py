@@ -12,6 +12,14 @@ couvertes par un test dédié :
   - matricule EVP non fiable (numéro de ligne, jamais un identifiant Sage)
   - colonne DATES tantôt texte libre, tantôt datetime Excel natif
   - colonne numérique à 0 (valeur réelle) vs vide (non renseignée)
+
+Les blocs d'absence (CP/RTT/MALADIE/CONGE_SANS_SOLDE/INJUSTIFIEE) sont
+identifiés par le parser via les libellés de la ligne d'en-tête groupée
+(jamais par un index de colonne fixe, cf. commit qui a suivi la détection
+de la confusion CP/RTT dans cas_01/cas_02). Les tests "généralisation"
+ci-dessous le prouvent en faisant varier la position/l'ordre/la présence
+des blocs d'un classeur synthétique à l'autre - le parser doit rester
+correct dans chaque cas, pas seulement sur la disposition du fichier réel.
 """
 
 from datetime import date, datetime
@@ -20,7 +28,6 @@ import openpyxl
 import pytest
 
 from app.parsers.excel_parser import (
-    ABSENCE_COLUMNS,
     COL_ACOMPTE,
     COL_DEBUT_CONTRAT,
     COL_FIN_CONTRAT,
@@ -43,9 +50,40 @@ from shared.schemas import TypeAbsence
 
 NB_COLONNES = 28
 
+# Libellés réels du fichier source (avec la faute de frappe "ABSCENCES" au
+# lieu de "ABSENCES", assumée telle quelle - cf. excel_parser.MOTIFS_LABEL_ABSENCE).
+LIBELLES_REELS: dict[TypeAbsence, str] = {
+    TypeAbsence.CP: "ABSCENCES CONGÉS PAYÉS",
+    TypeAbsence.RTT: "ABSCENCES RTT",
+    TypeAbsence.MALADIE: "ABSCENCES MALADIE",
+    TypeAbsence.CONGE_SANS_SOLDE: "CONGÉS SANS SOLDE",
+    TypeAbsence.INJUSTIFIEE: "ABSCENCES INJUSTIFIÉES",
+}
 
-def _ligne_vide() -> list:
-    return [None] * NB_COLONNES
+# Position (colonne NB DE JOUR ; DATES = colonne+1) identique au fichier réel.
+POSITIONS_REELLES: dict[TypeAbsence, int] = {
+    TypeAbsence.CP: 15,
+    TypeAbsence.RTT: 17,
+    TypeAbsence.MALADIE: 19,
+    TypeAbsence.CONGE_SANS_SOLDE: 21,
+    TypeAbsence.INJUSTIFIEE: 23,
+}
+
+
+def _ligne_vide(nb_colonnes: int = NB_COLONNES) -> list:
+    return [None] * nb_colonnes
+
+
+def _entete_groupee(
+    positions: dict[TypeAbsence, int] = POSITIONS_REELLES, nb_colonnes: int = NB_COLONNES
+) -> list:
+    """Ligne 3 : place le libellé réel de chaque bloc d'absence à la
+    colonne NB DE JOUR indiquée par `positions` (la colonne DATES,
+    position+1, reste à None, comme sur une vraie cellule fusionnée)."""
+    row = _ligne_vide(nb_colonnes)
+    for type_absence, col in positions.items():
+        row[col] = LIBELLES_REELS[type_absence]
+    return row
 
 
 def _ligne_salarie(
@@ -69,13 +107,17 @@ def _ligne_salarie(
     absence_nb_jours=None,
     absence_dates=None,
     absences: list[tuple] | None = None,
+    positions: dict[TypeAbsence, int] = POSITIONS_REELLES,
+    nb_colonnes: int = NB_COLONNES,
     remarques=None,
 ) -> list:
     """`absence_type`/`absence_nb_jours`/`absence_dates` positionnent une
     seule absence ; `absences` (liste de tuples (type, nb_jours, dates))
     permet d'en positionner plusieurs sur la même ligne, comme dans le
-    fichier réel (cf. test_cp_et_rtt_non_confondus_sur_la_meme_ligne)."""
-    row = _ligne_vide()
+    fichier réel (cf. test_cp_et_rtt_non_confondus_sur_la_meme_ligne).
+    `positions` doit correspondre à celles utilisées pour construire la
+    ligne d'en-tête groupée du même classeur (_entete_groupee)."""
+    row = _ligne_vide(nb_colonnes)
     row[COL_MATRICULE] = matricule
     row[COL_NOM] = nom
     row[COL_PRENOM] = prenom
@@ -91,39 +133,47 @@ def _ligne_salarie(
     row[COL_PRIME] = prime
     row[COL_ACOMPTE] = acompte
     row[COL_HEURES_SUP] = heures_sup
-    row[COL_REMARQUES] = remarques
+    if COL_REMARQUES < nb_colonnes:
+        row[COL_REMARQUES] = remarques
 
     if absence_type is not None:
-        col_jours, col_dates = ABSENCE_COLUMNS[absence_type]
+        col_jours = positions[absence_type]
         row[col_jours] = absence_nb_jours
-        row[col_dates] = absence_dates
+        row[col_jours + 1] = absence_dates
 
     for type_, nb_jours, dates in absences or []:
-        col_jours, col_dates = ABSENCE_COLUMNS[type_]
+        col_jours = positions[type_]
         row[col_jours] = nb_jours
-        row[col_dates] = dates
+        row[col_jours + 1] = dates
 
     return row
 
 
-def _ecrire_classeur(tmp_path, lignes, periode=date(2026, 6, 1)) -> str:
+def _ecrire_classeur(
+    tmp_path,
+    lignes,
+    periode=date(2026, 6, 1),
+    positions: dict[TypeAbsence, int] = POSITIONS_REELLES,
+    nb_colonnes: int = NB_COLONNES,
+) -> str:
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = periode.strftime("%m%Y")
 
-    ws.append(["VARIABLES SOFT IT"] + [None] * (NB_COLONNES - 1))
-    ws.append(["DATE", periode] + [None] * (NB_COLONNES - 2))
-    ws.append(_ligne_vide())  # ligne d'en-tête groupée (non exploitée par le parser)
-    ws.append(
-        [
-            "MATRICULE", "NOM", "PRENOM", "POSTE", "TYPE DE CONTRAT", "DEBUT CONTRAT",
-            "FIN DE CONTRAT", "HEURE MENSUEL", "SALAIRE/AN", "MUTUELLE",
-            "NB TICKET RESTAURANT", "PASS NAVIGO", "PRIME", "ACOMPTE", "HEURES SUP",
-            "NB DE JOUR", "DATES", "NB DE JOUR", "DATES", "NB DE JOUR", "DATES",
-            "NB DE JOUR", "DATES", "NB DE JOUR", "DATES", None, None, "REMARQUES",
-        ]
-    )
-    ws.append(_ligne_vide())
+    ws.append(["VARIABLES SOFT IT"] + [None] * (nb_colonnes - 1))
+    ws.append(["DATE", periode] + [None] * (nb_colonnes - 2))
+    ws.append(_entete_groupee(positions, nb_colonnes))
+    entete_colonnes = _ligne_vide(nb_colonnes)
+    entete_colonnes[COL_MATRICULE] = "MATRICULE"
+    entete_colonnes[COL_NOM] = "NOM"
+    entete_colonnes[COL_PRENOM] = "PRENOM"
+    for type_absence, col in positions.items():
+        entete_colonnes[col] = "NB DE JOUR"
+        entete_colonnes[col + 1] = "DATES"
+    if COL_REMARQUES < nb_colonnes:
+        entete_colonnes[COL_REMARQUES] = "REMARQUES"
+    ws.append(entete_colonnes)
+    ws.append(_ligne_vide(nb_colonnes))
     for ligne in lignes:
         ws.append(ligne)
 
@@ -359,3 +409,121 @@ def test_periode_deduite_de_len_tete_date(tmp_path):
     )
     ligne = parse_evp_file(chemin)[0]
     assert ligne.evp.periode == date(2026, 5, 1)
+
+
+# ---------------------------------------------------------------------------
+# Généralisation de l'identification des blocs d'absence (pas par position
+# fixe, mais par libellé d'en-tête) : ces 3 tests prouvent que le parser
+# retrouve les bons blocs même quand la disposition du classeur diffère de
+# celle du fichier réel actuel - preuve de généralisation, pas de simple
+# mémorisation du fichier de test.
+# ---------------------------------------------------------------------------
+
+def test_ordre_blocs_absence_inverse_toujours_bien_classe(tmp_path):
+    """Le bloc RTT est placé AVANT le bloc CP (ordre inversé par rapport au
+    fichier réel) : le parser doit identifier chaque bloc par son libellé,
+    pas par sa position relative aux autres blocs."""
+    positions = {
+        TypeAbsence.RTT: 15,
+        TypeAbsence.CP: 17,
+        TypeAbsence.MALADIE: 19,
+        TypeAbsence.CONGE_SANS_SOLDE: 21,
+        TypeAbsence.INJUSTIFIEE: 23,
+    }
+    chemin = _ecrire_classeur(
+        tmp_path,
+        [
+            _ligne_salarie(
+                matricule=1,
+                prenom="Lucie",
+                positions=positions,
+                absences=[
+                    (TypeAbsence.RTT, 1, "15/05/2026"),
+                    (TypeAbsence.CP, 1, "07/05/2026"),
+                ],
+            )
+        ],
+        positions=positions,
+    )
+    ligne = parse_evp_file(chemin)[0]
+
+    assert ligne.evp is not None
+    par_type = {a.type: a for a in ligne.evp.absences}
+    assert set(par_type) == {TypeAbsence.CP, TypeAbsence.RTT}
+    assert par_type[TypeAbsence.CP].dates_brutes == "07/05/2026"
+    assert par_type[TypeAbsence.RTT].dates_brutes == "15/05/2026"
+
+
+def test_colonne_supplementaire_inseree_avant_blocs_absence_retrouve_les_bons_blocs(
+    tmp_path,
+):
+    """Simule l'ajout futur d'une colonne juste avant les blocs d'absence
+    (évolution plausible du fichier RH) : tous les blocs sont décalés d'une
+    colonne vers la droite par rapport au fichier réel. Le parser doit
+    toujours les retrouver puisqu'il les localise par libellé, pas par
+    index absolu."""
+    positions = {
+        TypeAbsence.CP: 16,
+        TypeAbsence.RTT: 18,
+        TypeAbsence.MALADIE: 20,
+        TypeAbsence.CONGE_SANS_SOLDE: 22,
+        TypeAbsence.INJUSTIFIEE: 24,
+    }
+    chemin = _ecrire_classeur(
+        tmp_path,
+        [
+            _ligne_salarie(
+                matricule=1,
+                prenom="Lucie",
+                positions=positions,
+                nb_colonnes=NB_COLONNES + 1,
+                absence_type=TypeAbsence.RTT,
+                absence_nb_jours=2,
+                absence_dates="15 et 25/05",
+            )
+        ],
+        positions=positions,
+        nb_colonnes=NB_COLONNES + 1,
+    )
+    ligne = parse_evp_file(chemin)[0]
+
+    assert ligne.evp is not None
+    assert len(ligne.evp.absences) == 1
+    assert ligne.evp.absences[0].type == TypeAbsence.RTT
+    assert ligne.evp.absences[0].dates_brutes == "15 et 25/05"
+
+
+def test_bloc_absence_manquant_est_ignore_sans_planter(tmp_path):
+    """Un mois où le fichier RH ne porte plus du tout de bloc INJUSTIFIEE
+    (colonnes absentes, pas seulement vides) : le parser ne doit pas
+    planter, seulement ne jamais produire d'absence de ce type."""
+    positions = {
+        TypeAbsence.CP: 15,
+        TypeAbsence.RTT: 17,
+        TypeAbsence.MALADIE: 19,
+        TypeAbsence.CONGE_SANS_SOLDE: 21,
+        # Pas d'entrée TypeAbsence.INJUSTIFIEE : bloc absent du fichier.
+    }
+    chemin = _ecrire_classeur(
+        tmp_path,
+        [
+            _ligne_salarie(
+                matricule=1,
+                prenom="Lucie",
+                positions=positions,
+                nb_colonnes=23,
+                absence_type=TypeAbsence.RTT,
+                absence_nb_jours=1,
+                absence_dates="10/05/2026",
+            )
+        ],
+        positions=positions,
+        nb_colonnes=23,
+    )
+    ligne = parse_evp_file(chemin)[0]
+
+    assert ligne.evp is not None
+    assert not ligne.erreurs
+    assert len(ligne.evp.absences) == 1
+    assert ligne.evp.absences[0].type == TypeAbsence.RTT
+    assert all(a.type != TypeAbsence.INJUSTIFIEE for a in ligne.evp.absences)

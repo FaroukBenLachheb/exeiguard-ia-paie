@@ -8,8 +8,11 @@ cf. .gitignore) et retourne une liste de `ParsedEVPLigne` (un par salarié).
 Structure de fichier observée (feuille unique) :
   ligne 1 : titre ("VARIABLES SOFT IT")
   ligne 2 : "DATE" en colonne A, date de la période en colonne B
-  ligne 3 : en-têtes groupées des 5 blocs d'absence (fusionnées sur 2 colonnes)
-  ligne 4 : en-têtes de colonnes (cf. constantes COL_* / ABSENCE_COLUMNS)
+  ligne 3 : en-têtes groupées des blocs d'absence (fusionnées sur 2 colonnes,
+            libellé porté par la cellule NB DE JOUR du bloc) - lue
+            dynamiquement pour localiser chaque bloc (cf. _detecter_colonnes_absence),
+            AUCUN index de colonne fixe n'est utilisé pour cette identification
+  ligne 4 : en-têtes de colonnes (cf. constantes COL_*)
   ligne 5 : vide
   lignes 6+ : une ligne par salarié, jusqu'à la première ligne sans nom/prénom
 
@@ -32,7 +35,9 @@ Anomalies réelles gérées explicitement (cf. shared/schemas/evp.py) :
 
 from __future__ import annotations
 
+import re
 import sys
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
@@ -65,18 +70,29 @@ COL_ACOMPTE = 13
 COL_HEURES_SUP = 14
 COL_REMARQUES = 27
 
-# Chaque bloc d'absence occupe 2 colonnes consécutives (NB DE JOUR, DATES).
-# Position fixe plutôt que lue depuis la ligne d'en-tête groupée : celle-ci
-# porte des libellés mal encodés dans le fichier réel ("ABSCENCES...") peu
-# fiables pour un matching texte.
-ABSENCE_COLUMNS: dict[TypeAbsence, tuple[int, int]] = {
-    TypeAbsence.CP: (15, 16),
-    TypeAbsence.RTT: (17, 18),
-    TypeAbsence.MALADIE: (19, 20),
-    TypeAbsence.CONGE_SANS_SOLDE: (21, 22),
-    TypeAbsence.INJUSTIFIEE: (23, 24),
+# Chaque bloc d'absence occupe 2 colonnes consécutives (NB DE JOUR, DATES),
+# identifiées par le libellé de la ligne d'en-tête groupée (ligne 3), JAMAIS
+# par un index de colonne fixe : l'ordre des blocs, leur position (une
+# colonne peut être insérée avant) ou même leur présence peuvent varier
+# d'un fichier à l'autre (cf. _detecter_colonnes_absence).
+#
+# Les motifs ci-dessous sont volontairement tolérants sur l'orthographe :
+# le fichier réel porte la faute de frappe "ABSCENCES" (au lieu de
+# "ABSENCES") sur 4 des 5 blocs - faute assumée telle quelle dans la
+# source, jamais "corrigée" avant comparaison. Le matching se fait sur un
+# libellé normalisé (accents retirés, casse ignorée, espaces compactés) et
+# cherche un sous-motif discriminant, insensible à ce genre de coquille
+# puisqu'il ne porte pas sur "ABS(C)ENCES" mais sur la partie spécifique
+# du libellé (ex: "RTT", "MALADIE"...).
+MOTIFS_LABEL_ABSENCE: dict[TypeAbsence, str] = {
+    TypeAbsence.CP: "CONGES PAYES",
+    TypeAbsence.RTT: "RTT",
+    TypeAbsence.MALADIE: "MALADIE",
+    TypeAbsence.CONGE_SANS_SOLDE: "SANS SOLDE",
+    TypeAbsence.INJUSTIFIEE: "INJUSTIFI",
 }
 
+GROUP_HEADER_ROW = 3
 HEADER_ROW = 4
 DATA_START_ROW = 6
 
@@ -99,6 +115,7 @@ def parse_evp_file(path: str | Path) -> list[ParsedEVPLigne]:
     ws = wb.active
 
     periode = _periode_depuis_entete(ws)
+    colonnes_absence = _detecter_colonnes_absence(ws)
 
     resultats: list[ParsedEVPLigne] = []
     for row_idx, row in enumerate(
@@ -108,9 +125,44 @@ def parse_evp_file(path: str | Path) -> list[ParsedEVPLigne]:
         nom = row[COL_NOM] if COL_NOM < len(row) else None
         if not prenom and not nom:
             continue  # ligne vide : fin du tableau
-        resultats.append(_parse_ligne(row_idx, row, periode))
+        resultats.append(_parse_ligne(row_idx, row, periode, colonnes_absence))
 
     return resultats
+
+
+def _detecter_colonnes_absence(ws) -> dict[TypeAbsence, tuple[int, int]]:
+    """Localise dynamiquement, pour ce classeur, les colonnes (NB DE JOUR,
+    DATES) de chaque bloc d'absence en lisant les libellés de la ligne
+    d'en-tête groupée (GROUP_HEADER_ROW). Un type d'absence dont le libellé
+    n'est pas trouvé est simplement absent du dict retourné (aucune erreur :
+    cf. test correspondant, un mois sans certaines colonnes doit rester
+    parsable)."""
+    libelles = [c.value for c in ws[GROUP_HEADER_ROW]]
+    resultat: dict[TypeAbsence, tuple[int, int]] = {}
+    for idx, valeur in enumerate(libelles):
+        type_absence = _label_vers_type_absence(valeur)
+        if type_absence is None or idx + 1 >= len(libelles):
+            continue
+        resultat[type_absence] = (idx, idx + 1)
+    return resultat
+
+
+def _normaliser_libelle(valeur: Any) -> str:
+    if valeur is None:
+        return ""
+    s = unicodedata.normalize("NFKD", str(valeur))
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", s).strip().upper()
+
+
+def _label_vers_type_absence(valeur: Any) -> Optional[TypeAbsence]:
+    libelle = _normaliser_libelle(valeur)
+    if not libelle:
+        return None
+    for type_absence, motif in MOTIFS_LABEL_ABSENCE.items():
+        if motif in libelle:
+            return type_absence
+    return None
 
 
 def _periode_depuis_entete(ws) -> date:
@@ -124,7 +176,12 @@ def _periode_depuis_entete(ws) -> date:
     return d.replace(day=1)
 
 
-def _parse_ligne(row_idx: int, row: tuple, periode: date) -> ParsedEVPLigne:
+def _parse_ligne(
+    row_idx: int,
+    row: tuple,
+    periode: date,
+    colonnes_absence: dict[TypeAbsence, tuple[int, int]],
+) -> ParsedEVPLigne:
     avertissements: list[str] = []
 
     raw_matricule = _clean_str(_cell(row, COL_MATRICULE))
@@ -133,7 +190,7 @@ def _parse_ligne(row_idx: int, row: tuple, periode: date) -> ParsedEVPLigne:
     nb_ticket_restaurant_renseigne = ticket_restaurant_val is not None
 
     absences = []
-    for type_absence, (col_jours, col_dates) in ABSENCE_COLUMNS.items():
+    for type_absence, (col_jours, col_dates) in colonnes_absence.items():
         nb_jours = _cell(row, col_jours)
         dates_brutes = _normalize_dates_brutes(_cell(row, col_dates))
         if nb_jours is None and dates_brutes is None:
