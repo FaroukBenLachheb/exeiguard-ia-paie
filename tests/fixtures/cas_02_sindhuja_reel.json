@@ -53,7 +53,7 @@
     "heures_sup": null,
     "absences": [
       {
-        "type": "RTT",
+        "type": "CP",
         "nb_jours": 1.0,
         "dates_brutes": "07/05/2026"
       },

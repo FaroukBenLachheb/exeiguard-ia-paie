@@ -96,7 +96,7 @@ def cas_reels() -> list[dict]:
     return [
         {
             "id": "cas_01_didier_reel",
-            "description": "Cas réel - nominal avec absence RTT, sans clause formation",
+            "description": "Cas réel - nominal avec absence CP, sans clause formation",
             "contrat": ContratTravail(
                 **_contrat_de_base(
                     prenom="Didier",
@@ -123,8 +123,13 @@ def cas_reels() -> list[dict]:
                 mutuelle="Seul",
                 nb_ticket_restaurant=16,
                 pass_navigo=False,
+                # Corrigé le 2026-08-17 suite à la validation croisée avec le parser
+                # automatisé D.4 (extracteur-evp/app/parsers/excel_parser.py, commit
+                # 11bb025) - la transcription manuelle initiale (D.1) avait confondu
+                # CP et RTT sur ce cas : "15 et 25/05" se trouve dans le bloc de
+                # colonnes CONGÉS PAYÉS du fichier Excel source (Juin 2026), pas RTT.
                 absences=[
-                    AbsencePeriode(type=TypeAbsence.RTT, nb_jours=2, dates_brutes="15 et 25/05")
+                    AbsencePeriode(type=TypeAbsence.CP, nb_jours=2, dates_brutes="15 et 25/05")
                 ],
             ).model_dump(mode="json"),
         },
@@ -158,8 +163,14 @@ def cas_reels() -> list[dict]:
                 mutuelle="Avec enfants",
                 nb_ticket_restaurant=16,
                 pass_navigo=True,
+                # Corrigé le 2026-08-17 suite à la validation croisée avec le parser
+                # automatisé D.4 (extracteur-evp/app/parsers/excel_parser.py, commit
+                # 11bb025) - la transcription manuelle initiale (D.1) avait confondu
+                # CP et RTT sur ce cas : l'absence du 07/05/2026 se trouve dans le
+                # bloc CONGÉS PAYÉS du fichier Excel source (Juin 2026), celle du
+                # 15/05/2026 est bien dans le bloc RTT (déjà correcte).
                 absences=[
-                    AbsencePeriode(type=TypeAbsence.RTT, nb_jours=1, dates_brutes="07/05/2026"),
+                    AbsencePeriode(type=TypeAbsence.CP, nb_jours=1, dates_brutes="07/05/2026"),
                     AbsencePeriode(type=TypeAbsence.RTT, nb_jours=1, dates_brutes="15/05/2026"),
                 ],
                 remarques="Changement d'adresse",

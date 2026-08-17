@@ -68,8 +68,13 @@ def _ligne_salarie(
     absence_type: TypeAbsence | None = None,
     absence_nb_jours=None,
     absence_dates=None,
+    absences: list[tuple] | None = None,
     remarques=None,
 ) -> list:
+    """`absence_type`/`absence_nb_jours`/`absence_dates` positionnent une
+    seule absence ; `absences` (liste de tuples (type, nb_jours, dates))
+    permet d'en positionner plusieurs sur la même ligne, comme dans le
+    fichier réel (cf. test_cp_et_rtt_non_confondus_sur_la_meme_ligne)."""
     row = _ligne_vide()
     row[COL_MATRICULE] = matricule
     row[COL_NOM] = nom
@@ -92,6 +97,11 @@ def _ligne_salarie(
         col_jours, col_dates = ABSENCE_COLUMNS[absence_type]
         row[col_jours] = absence_nb_jours
         row[col_dates] = absence_dates
+
+    for type_, nb_jours, dates in absences or []:
+        col_jours, col_dates = ABSENCE_COLUMNS[type_]
+        row[col_jours] = nb_jours
+        row[col_dates] = dates
 
     return row
 
@@ -224,6 +234,42 @@ def test_dates_absence_datetime_natif_normalise_en_chaine(tmp_path):
     assert len(ligne.evp.absences) == 1
     assert ligne.evp.absences[0].type == TypeAbsence.CP
     assert ligne.evp.absences[0].dates_brutes == "07/05/2026"  # chaîne, pas un datetime
+
+
+def test_cp_et_rtt_non_confondus_sur_la_meme_ligne(tmp_path):
+    """Non-régression : la transcription manuelle D.1 avait classé en RTT
+    des absences CP de Didier/Sindhuja (cas_01/cas_02 dans
+    scripts/generate_fixtures.py, corrigé suite à cette détection par le
+    parser D.4, cf. commit 11bb025). Reproduit le positionnement réel qui a
+    causé la confusion : une ligne avec une absence dans le bloc CP
+    (colonnes 15/16) ET une dans le bloc RTT (colonnes 17/18), comme le
+    fichier Excel réel de Sindhuja (juin 2026) - les deux doivent rester
+    correctement associées à leur type et leurs dates, sans être ni
+    fusionnées ni permutées."""
+    chemin = _ecrire_classeur(
+        tmp_path,
+        [
+            _ligne_salarie(
+                matricule=5,
+                prenom="Lucie",
+                absences=[
+                    (TypeAbsence.CP, 1, "07/05/2026"),
+                    (TypeAbsence.RTT, 1, "15/05/2026"),
+                ],
+            )
+        ],
+    )
+    ligne = parse_evp_file(chemin)[0]
+
+    assert ligne.evp is not None
+    assert len(ligne.evp.absences) == 2
+
+    par_type = {a.type: a for a in ligne.evp.absences}
+    assert set(par_type) == {TypeAbsence.CP, TypeAbsence.RTT}
+    assert par_type[TypeAbsence.CP].dates_brutes == "07/05/2026"
+    assert par_type[TypeAbsence.CP].nb_jours == 1
+    assert par_type[TypeAbsence.RTT].dates_brutes == "15/05/2026"
+    assert par_type[TypeAbsence.RTT].nb_jours == 1
 
 
 def test_absence_incoherente_nb_jours_sans_dates_devient_avertissement(tmp_path):

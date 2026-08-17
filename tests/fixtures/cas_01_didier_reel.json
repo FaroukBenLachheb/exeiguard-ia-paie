@@ -1,6 +1,6 @@
 {
   "id": "cas_01_didier_reel",
-  "description": "Cas réel - nominal avec absence RTT, sans clause formation",
+  "description": "Cas réel - nominal avec absence CP, sans clause formation",
   "contrat": {
     "matricule": null,
     "prenom": "Didier",
@@ -53,7 +53,7 @@
     "heures_sup": null,
     "absences": [
       {
-        "type": "RTT",
+        "type": "CP",
         "nb_jours": 2.0,
         "dates_brutes": "15 et 25/05"
       }
