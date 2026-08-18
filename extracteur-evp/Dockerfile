@@ -3,15 +3,28 @@
 # Squelette en attendant l'implementation metier (OCR + parsing EVP,
 # phases D.4+). Suffisant pour demarrer dans docker-compose et exposer
 # GET /health, en attendant le vrai code.
+#
+# Dependances partagees (shared/) : voir
+# docs/architecture/dependances-partagees.md pour le pattern commun aux
+# Dockerfiles applicatifs. shared/ est copie a cote de app/,
+# shared/requirements.txt est installe en plus du requirements.txt du
+# service, et PYTHONPATH inclut /app/shared pour que
+# `from schemas import ...` fonctionne sans sys.path.insert dans le code
+# applicatif (utile des que ce service importera shared/schemas, ex.
+# EVPMensuel, phases D.4+).
 
 FROM python:3.11-slim
 
 WORKDIR /app
 
 COPY extracteur-evp/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+COPY shared/requirements.txt ./shared-requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt -r shared-requirements.txt
 
 COPY extracteur-evp/app/ ./app/
+COPY shared/ ./shared/
+
+ENV PYTHONPATH=/app/shared
 
 EXPOSE 8000
 

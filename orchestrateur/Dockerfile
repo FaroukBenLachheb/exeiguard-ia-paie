@@ -7,16 +7,29 @@
 # app/, a cote, pour que ces imports fonctionnent une fois le conteneur
 # demarre. Ce contexte de build doit etre la racine du depot (pas
 # orchestrateur/) pour que db/ soit accessible.
+#
+# Dependances partagees (shared/) : voir
+# docs/architecture/dependances-partagees.md pour le pattern commun aux
+# Dockerfiles applicatifs (orchestrateur, extracteur-evp,
+# compliance-validation, integration-sage). shared/ est copie a cote de
+# app/, shared/requirements.txt est installe en plus du requirements.txt
+# du service, et PYTHONPATH inclut /app/shared pour que
+# `from schemas import ...` fonctionne sans sys.path.insert dans le code
+# applicatif.
 
 FROM python:3.11-slim
 
 WORKDIR /app
 
 COPY orchestrateur/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+COPY shared/requirements.txt ./shared-requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt -r shared-requirements.txt
 
 COPY orchestrateur/app/ ./app/
 COPY db/ ./db/
+COPY shared/ ./shared/
+
+ENV PYTHONPATH=/app/shared
 
 EXPOSE 8000
 

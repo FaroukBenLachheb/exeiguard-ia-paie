@@ -1,0 +1,19 @@
+# .dockerignore — racine du depot
+#
+# Le contexte de build de tous les Dockerfiles applicatifs est la racine
+# du depot (voir docker-compose.dev.yml : `context: .`), car ils doivent
+# pouvoir COPY des dossiers partages entre services (db/, shared/, voir
+# docs/architecture/dependances-partagees.md). Sans ce fichier, un
+# `COPY shared/ ./shared/` embarquerait aussi shared/venv/ (environnement
+# virtuel local, des milliers de fichiers Windows) dans chaque image.
+
+**/__pycache__/
+**/*.pyc
+**/venv/
+**/.venv/
+.git/
+.pytest_cache/
+*.db
+node_modules/
+data-confidentielles/
+.env
