@@ -87,5 +87,15 @@ def main():
     session.close()
 
 
+def test_insertion():
+    # Exécute le même scénario que `main()` sous pytest (auparavant ce
+    # fichier ne définissait aucune fonction `test_*` : pytest le
+    # collectait sans erreur mais n'exécutait jamais rien). Insère dans la
+    # base pointée par DATABASE_URL au moment de l'import (pas de rollback
+    # ni de base isolée par test) : utiliser un DATABASE_URL sqlite dédié
+    # aux tests pour ne pas accumuler de lignes dans une base partagée.
+    main()
+
+
 if __name__ == "__main__":
     main()
