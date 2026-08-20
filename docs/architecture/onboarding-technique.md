@@ -1,6 +1,6 @@
 # Onboarding technique — exeiguard-ia-paie
 
-Ce document explique **ce qui existe dans le dépôt de code aujourd'hui, pourquoi, et comment le faire tourner**. Il suppose que vous connaissez déjà l'idée métier du projet (automatiser le contrôle de conformité de la paie chez Soft IT) et l'architecture cible décrite dans les documents de référence (schéma d'architecture, diagramme de séquence) : les concepts fonctionnels comme l'EVP, le dossier salarié, le pipeline A1→A6, le Rule Engine, le RAG ou l'intégration Sage ne sont donc pas redéfinis depuis zéro ici — seulement rattachés au code qui les implémente (ou pas encore).
+Ce document explique **ce qui existe dans le dépôt de code aujourd'hui, pourquoi, et comment le faire tourner**. Il suppose que vous connaissez déjà l'idée métier du projet (automatiser le contrôle de conformité de la paie chez un client ) et l'architecture cible décrite dans les documents de référence (schéma d'architecture, diagramme de séquence) : les concepts fonctionnels comme l'EVP, le dossier salarié, le pipeline A1→A6, le Rule Engine, le RAG ou l'intégration Sage ne sont donc pas redéfinis depuis zéro ici — seulement rattachés au code qui les implémente (ou pas encore).
 
 Chaque notion propre au code (nom de fichier, de classe, de champ, de convention) est définie la première fois qu'elle apparaît, et reprise dans le glossaire (§9) pour référence rapide.
 
