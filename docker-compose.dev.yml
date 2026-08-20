@@ -15,7 +15,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-exeiguard}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_local}
       POSTGRES_DB: ${POSTGRES_DB:-exeiguard_poc}
-    ports:
+    expose:
       - "5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -47,8 +47,8 @@ services:
     build:
       context: .
       dockerfile: extracteur-evp/Dockerfile
-    ports:
-      - "8001:8000"
+    expose:
+      - "8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
       interval: 10s
@@ -60,8 +60,8 @@ services:
     build:
       context: .
       dockerfile: compliance-validation/Dockerfile
-    ports:
-      - "8002:8000"
+    expose:
+      - "8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
       interval: 10s
@@ -73,8 +73,8 @@ services:
     build:
       context: .
       dockerfile: integration-sage/Dockerfile
-    ports:
-      - "8003:8000"
+    expose:
+      - "8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
       interval: 10s
