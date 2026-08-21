@@ -31,8 +31,8 @@ services:
       dockerfile: orchestrateur/Dockerfile
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-exeiguard}:${POSTGRES_PASSWORD:-exeiguard_paie}@postgres:5432/${POSTGRES_DB:-exeiguard_poc}
-    expose:
-      - "8000"
+    ports:
+      - "8000:8000"
     # Port publie temporairement pour le developpement actif sur la VM OVH :
     # a retirer avant toute mise en situation reelle. En Phase 9 (Traefik),
     # seul le port 443 sera expose publiquement et orchestrateur repassera
