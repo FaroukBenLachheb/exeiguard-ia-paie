@@ -26,7 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 # Permet d'exécuter le script depuis la racine du projet sans installer
@@ -41,6 +41,7 @@ from schemas import (  # noqa: E402
     AbsencePeriode,
     ContratTravail,
     EVPMensuel,
+    RuptureContrat,
     StatutSalarie,
     TypeAbsence,
     TypeContrat,
@@ -72,6 +73,22 @@ ACCORD_SOFT_IT = dict(
     duree_non_concurrence_mois=12,
     duree_engagement_formation_mois=12,
 )
+
+# Période EVP de référence pour les cas synthétiques (alignée sur les cas
+# réels ci-dessous, tous générés sur le fichier Excel source de juin 2026).
+PERIODE_EVP = date(2026, 6, 1)
+
+
+def _decale_mois(base: date, delta_mois: int) -> date:
+    """Décale `base` de `delta_mois` mois (positif ou négatif).
+
+    Ne gère pas les dépassements de fin de mois : suffisant ici car tous
+    les appels portent sur des dates au 1er du mois (PERIODE_EVP, ou des
+    dates de notification de rupture calquées dessus).
+    """
+    total = base.year * 12 + (base.month - 1) + delta_mois
+    an, mois = divmod(total, 12)
+    return date(an, mois + 1, 1)
 
 
 def _contrat_de_base(**overrides) -> dict:
@@ -361,17 +378,19 @@ def cas_reels() -> list[dict]:
 def cas_synthetiques(fake: Faker) -> list[dict]:
     cas = []
 
-    def ajoute(id_, description, contrat_kwargs, evp_kwargs):
+    def ajoute(id_, description, contrat_kwargs, evp_kwargs, rupture_kwargs=None):
         contrat = ContratTravail(**_contrat_de_base(**contrat_kwargs))
         evp = EVPMensuel(**evp_kwargs)
-        cas.append(
-            {
-                "id": id_,
-                "description": description,
-                "contrat": contrat.model_dump(mode="json"),
-                "evp": evp.model_dump(mode="json"),
-            }
-        )
+        cas_dict = {
+            "id": id_,
+            "description": description,
+            "contrat": contrat.model_dump(mode="json"),
+            "evp": evp.model_dump(mode="json"),
+        }
+        if rupture_kwargs is not None:
+            rupture = RuptureContrat(**rupture_kwargs)
+            cas_dict["rupture"] = rupture.model_dump(mode="json")
+        cas.append(cas_dict)
 
     # --- Cas 03 : nominal simple, sans absence ---
     prenom = fake.first_name()
@@ -705,6 +724,205 @@ def cas_synthetiques(fake: Faker) -> list[dict]:
             debut_contrat=date(2026, 6, 1),
             salaire_an=40000,
             mutuelle="Seul",
+            nb_ticket_restaurant=16,
+            pass_navigo=True,
+        ),
+    )
+
+    # --- Cas 16 : période d'essai en cours, conforme (RG-04) ---
+    prenom = fake.first_name()
+    date_effet_16 = _decale_mois(PERIODE_EVP, -2)
+    ajoute(
+        "cas_16_periode_essai_en_cours",
+        "Cas conforme - période d'essai en cours, durée conforme au maximum "
+        "CCN SYNTEC pour un coefficient 95-270 (RG-04)",
+        dict(
+            prenom=prenom,
+            nationalite="Française",
+            poste="Développeur Backend",
+            date_effet=date_effet_16,
+            position="2.1",
+            coefficient=130,
+            remuneration_annuelle_brute=44000,
+            remuneration_mensuelle_brute=3666.67,
+            periode_essai_mois=4,
+            date_signature=date_effet_16 - timedelta(days=1),
+            lieu_signature="Paris",
+        ),
+        dict(
+            periode=PERIODE_EVP,
+            prenom=prenom,
+            poste="Développeur Backend",
+            type_contrat=TypeContrat.CDI,
+            debut_contrat=date_effet_16,
+            salaire_an=44000,
+            mutuelle="Seul",
+            nb_ticket_restaurant=16,
+            pass_navigo=False,
+        ),
+    )
+
+    # --- Cas 17 : période d'essai hors limite légale (RG-04) ---
+    # CAS VOLONTAIREMENT NON CONFORME : même profil que cas_16, mais
+    # periode_essai_mois=6, au-delà du maximum CCN SYNTEC (4 mois pour un
+    # coefficient 95-270) et du maximum légal Code du travail (4 mois pour
+    # les cadres). Sert à vérifier que RG-04 détecte bien une violation,
+    # pas seulement à confirmer les cas conformes.
+    prenom = fake.first_name()
+    date_effet_17 = _decale_mois(PERIODE_EVP, -2)
+    ajoute(
+        "cas_17_periode_essai_hors_limite_legale",
+        "Cas VOLONTAIREMENT NON CONFORME - période d'essai de 6 mois, "
+        "au-delà du maximum CCN SYNTEC/Code du travail pour un cadre "
+        "(RG-04 doit détecter la violation)",
+        dict(
+            prenom=prenom,
+            nationalite="Française",
+            poste="Développeur Backend",
+            date_effet=date_effet_17,
+            position="2.1",
+            coefficient=130,
+            remuneration_annuelle_brute=44000,
+            remuneration_mensuelle_brute=3666.67,
+            periode_essai_mois=6,
+            date_signature=date_effet_17 - timedelta(days=1),
+            lieu_signature="Paris",
+        ),
+        dict(
+            periode=PERIODE_EVP,
+            prenom=prenom,
+            poste="Développeur Backend",
+            type_contrat=TypeContrat.CDI,
+            debut_contrat=date_effet_17,
+            salaire_an=44000,
+            mutuelle="Seul",
+            nb_ticket_restaurant=16,
+            pass_navigo=False,
+        ),
+    )
+
+    # --- Cas 18 : démission ETAM avec préavis conforme (RG-06) ---
+    prenom = fake.first_name()
+    date_effet_18 = _decale_mois(PERIODE_EVP, -36)
+    date_notif_18 = PERIODE_EVP
+    date_fin_18 = _decale_mois(date_notif_18, 2)
+    ajoute(
+        "cas_18_demission_etam_avec_preavis",
+        "Cas conforme - démission ETAM avec ancienneté > 2 ans, préavis de "
+        "2 mois conforme à la CCN SYNTEC (RG-06)",
+        dict(
+            prenom=prenom,
+            nationalite="Française",
+            poste="Gestionnaire Administratif et Paie",
+            date_effet=date_effet_18,
+            statut=StatutSalarie.ETAM,
+            # Position illustrative : le coefficient 250 dépasse la table
+            # locale GRILLE_SYNTEC (calibrée sur les positions cadre
+            # observées) ; seuls statut+coefficient+ancienneté comptent
+            # pour RG-06 (préavis), pas la valeur de `position` en soi.
+            position="2.3",
+            coefficient=250,
+            remuneration_annuelle_brute=38000,
+            remuneration_mensuelle_brute=3166.67,
+            periode_essai_mois=None,
+            date_signature=date_effet_18 - timedelta(days=1),
+            lieu_signature="Paris",
+        ),
+        dict(
+            periode=PERIODE_EVP,
+            prenom=prenom,
+            poste="Gestionnaire Administratif et Paie",
+            type_contrat=TypeContrat.CDI,
+            debut_contrat=date_effet_18,
+            salaire_an=38000,
+            mutuelle="Seul",
+            nb_ticket_restaurant=16,
+            pass_navigo=True,
+        ),
+        rupture_kwargs=dict(
+            type_rupture="demission",
+            date_notification=date_notif_18,
+            date_fin_contrat_effective=date_fin_18,
+            motif="Démission - préavis CCN SYNTEC de 2 mois (ETAM, ancienneté > 2 ans)",
+        ),
+    )
+
+    # --- Cas 19 : licenciement cadre, préavis insuffisant (RG-06) ---
+    # CAS VOLONTAIREMENT NON CONFORME, même logique que cas_17 : préavis
+    # d'1 mois seulement alors que la CCN SYNTEC impose 3 mois pour un
+    # cadre. Sert à vérifier que RG-06 détecte bien une violation, pas
+    # seulement à confirmer les cas conformes (cf. cas_18).
+    prenom = fake.first_name()
+    date_effet_19 = _decale_mois(PERIODE_EVP, -12)
+    date_notif_19 = PERIODE_EVP
+    date_fin_19 = _decale_mois(date_notif_19, 1)
+    ajoute(
+        "cas_19_licenciement_cadre_preavis_insuffisant",
+        "Cas VOLONTAIREMENT NON CONFORME - licenciement cadre avec un "
+        "préavis d'1 mois au lieu des 3 mois requis par la CCN SYNTEC "
+        "(RG-06 doit détecter la violation)",
+        dict(
+            prenom=prenom,
+            nationalite="Française",
+            poste="Ingénieur DevOps",
+            date_effet=date_effet_19,
+            position="2.2",
+            coefficient=130,
+            remuneration_annuelle_brute=48000,
+            remuneration_mensuelle_brute=4000,
+            periode_essai_mois=None,
+            date_signature=date_effet_19 - timedelta(days=1),
+            lieu_signature="Paris",
+        ),
+        dict(
+            periode=PERIODE_EVP,
+            prenom=prenom,
+            poste="Ingénieur DevOps",
+            type_contrat=TypeContrat.CDI,
+            debut_contrat=date_effet_19,
+            salaire_an=48000,
+            mutuelle="Seul",
+            nb_ticket_restaurant=16,
+            pass_navigo=True,
+        ),
+        rupture_kwargs=dict(
+            type_rupture="licenciement",
+            date_notification=date_notif_19,
+            date_fin_contrat_effective=date_fin_19,
+            motif="Licenciement - préavis insuffisant (1 mois au lieu de 3 mois requis pour un cadre CCN SYNTEC)",
+        ),
+    )
+
+    # --- Cas 20 : ancienneté 6 ans, congé d'ancienneté (RG-07) ---
+    prenom = fake.first_name()
+    date_effet_20 = _decale_mois(PERIODE_EVP, -74)  # 6 ans et 2 mois
+    ajoute(
+        "cas_20_anciennete_six_ans",
+        "Cas conforme - ancienneté de 6 ans et 2 mois, dépasse le premier "
+        "palier CCN SYNTEC de congés d'ancienneté (5 ans). Le futur Rule "
+        "Engine RG-07 doit calculer ce palier depuis date_effet, pas "
+        "depuis une valeur codée en dur.",
+        dict(
+            prenom=prenom,
+            nationalite="Française",
+            poste="Responsable Technique",
+            date_effet=date_effet_20,
+            position="3.1",
+            coefficient=170,
+            remuneration_annuelle_brute=52000,
+            remuneration_mensuelle_brute=4333.33,
+            periode_essai_mois=None,
+            date_signature=date_effet_20 - timedelta(days=1),
+            lieu_signature="Paris",
+        ),
+        dict(
+            periode=PERIODE_EVP,
+            prenom=prenom,
+            poste="Responsable Technique",
+            type_contrat=TypeContrat.CDI,
+            debut_contrat=date_effet_20,
+            salaire_an=52000,
+            mutuelle="Avec enfants",
             nb_ticket_restaurant=16,
             pass_navigo=True,
         ),
