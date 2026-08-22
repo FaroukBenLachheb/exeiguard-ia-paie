@@ -504,8 +504,14 @@ def cas_synthetiques(fake: Faker) -> list[dict]:
             poste="Assistant Administratif",
             date_effet=date(2025, 1, 6),
             statut=StatutSalarie.ETAM,
+            # GRILLE_SYNTEC (ci-dessus) est la grille Ingénieurs et Cadres,
+            # pas la grille ETAM. Dans la grille ETAM de la CCN SYNTEC
+            # (IDCC 1486, avenant classifications), la position 1.1
+            # (niveau d'entrée, "exécution d'instructions") correspond au
+            # coefficient 240 - cohérent avec le profil junior visé ici
+            # ("Assistant Administratif").
             position="1.1",
-            coefficient=GRILLE_SYNTEC["1.1"],
+            coefficient=240,
             remuneration_annuelle_brute=28000,
             remuneration_mensuelle_brute=2333.33,
             periode_essai_mois=2,
