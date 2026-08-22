@@ -816,11 +816,14 @@ def cas_synthetiques(fake: Faker) -> list[dict]:
             poste="Gestionnaire Administratif et Paie",
             date_effet=date_effet_18,
             statut=StatutSalarie.ETAM,
-            # Position illustrative : le coefficient 250 dépasse la table
-            # locale GRILLE_SYNTEC (calibrée sur les positions cadre
-            # observées) ; seuls statut+coefficient+ancienneté comptent
-            # pour RG-06 (préavis), pas la valeur de `position` en soi.
-            position="2.3",
+            # GRILLE_SYNTEC (ci-dessus) reflète la grille Ingénieurs et
+            # Cadres, pas la grille ETAM : ses positions ne s'appliquent
+            # pas ici. Dans la grille ETAM de la CCN SYNTEC (IDCC 1486,
+            # avenant classifications), le coefficient 250 correspond à
+            # la position 1.2. Seuls statut+coefficient+ancienneté
+            # comptent pour RG-06 (préavis), pas la valeur de `position`
+            # en soi, mais la cohérence des données doit être respectée.
+            position="1.2",
             coefficient=250,
             remuneration_annuelle_brute=38000,
             remuneration_mensuelle_brute=3166.67,
