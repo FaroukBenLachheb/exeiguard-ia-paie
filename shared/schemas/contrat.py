@@ -14,6 +14,14 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
+# Tolérance (en euros) entre remuneration_annuelle_brute/12 et
+# remuneration_mensuelle_brute déclarée. Exposée comme constante nommée
+# (et pas seulement en dur dans le validator ci-dessous) pour que le Rule
+# Engine (compliance-validation/app/rule_engine/rules/rg02_remuneration.py)
+# puisse la réutiliser telle quelle, sans risquer de dupliquer une valeur
+# différente au fil du temps.
+TOLERANCE_REMUNERATION_MENSUELLE_EUR = 2
+
 
 class StatutSalarie(str, Enum):
     CADRE = "CADRE"
@@ -80,7 +88,7 @@ class ContratTravail(BaseModel):
         # dépasser 1€ sur des cas réels ; 2€ reste strict (rejette toujours
         # les vraies erreurs de saisie/incohérences plus grossières).
         attendu = round(self.remuneration_annuelle_brute / 12, 2)
-        if abs(attendu - self.remuneration_mensuelle_brute) > 2:
+        if abs(attendu - self.remuneration_mensuelle_brute) > TOLERANCE_REMUNERATION_MENSUELLE_EUR:
             raise ValueError(
                 f"Incohérence rémunération : annuel/12={attendu} "
                 f"vs mensuel déclaré={self.remuneration_mensuelle_brute}"
