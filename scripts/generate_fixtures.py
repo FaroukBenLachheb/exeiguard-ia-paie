@@ -46,35 +46,13 @@ from schemas import (  # noqa: E402
     TypeAbsence,
     TypeContrat,
 )
+from reference_data.grilles_syntec import (  # noqa: E402
+    GRILLE_SYNTEC_CADRES,
+    GRILLE_SYNTEC_ETAM,
+)
 
 FIXTURES_DIR = ROOT / "tests" / "fixtures"
 SEEDS_DIR = ROOT / "db" / "seeds"
-
-# Grille de classification SYNTEC - Ingénieurs et Cadres uniquement
-# (positions 1.1 à 3.3, coefficients 95-270). Ne pas utiliser pour un
-# salarié statut=ETAM, cf. grille séparée GRILLE_SYNTEC_ETAM.
-GRILLE_SYNTEC_CADRES = {
-    "1.1": 95,
-    "1.2": 100,
-    "2.1": 115,
-    "2.2": 130,
-    "2.3": 150,
-    "3.1": 170,
-    "3.2": 210,
-    "3.3": 270,
-}
-
-# Grille de classification SYNTEC - ETAM uniquement (CCN SYNTEC, IDCC 1486,
-# avenant classifications). Positions/coefficients distincts de la grille
-# Ingénieurs et Cadres (GRILLE_SYNTEC_CADRES) : ne pas confondre les deux
-# échelles, cf. bugs cas_06 et cas_18 (positions cadres appliquées à tort
-# à des salariés ETAM). Dict volontairement limité aux entrées vérifiées
-# via deux sources indépendantes (salerya.fr, mapaye.fr) ; ne pas
-# compléter les échelons manquants sans la même vérification.
-GRILLE_SYNTEC_ETAM = {
-    "1.1": 240,
-    "1.2": 250,
-}
 
 # Paramètres de l'accord d'entreprise Soft IT (cf. structure_donnees_soft_it.md §5.2)
 ACCORD_SOFT_IT = dict(
