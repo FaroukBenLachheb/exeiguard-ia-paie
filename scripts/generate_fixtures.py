@@ -50,9 +50,10 @@ from schemas import (  # noqa: E402
 FIXTURES_DIR = ROOT / "tests" / "fixtures"
 SEEDS_DIR = ROOT / "db" / "seeds"
 
-# Grille de classification SYNTEC observée sur les contrats réels
-# (position -> coefficient). A affiner si vous avez d'autres grades réels.
-GRILLE_SYNTEC = {
+# Grille de classification SYNTEC - Ingénieurs et Cadres uniquement
+# (positions 1.1 à 3.3, coefficients 95-270). Ne pas utiliser pour un
+# salarié statut=ETAM, cf. grille séparée GRILLE_SYNTEC_ETAM.
+GRILLE_SYNTEC_CADRES = {
     "1.1": 95,
     "1.2": 100,
     "2.1": 115,
@@ -61,6 +62,18 @@ GRILLE_SYNTEC = {
     "3.1": 170,
     "3.2": 210,
     "3.3": 270,
+}
+
+# Grille de classification SYNTEC - ETAM uniquement (CCN SYNTEC, IDCC 1486,
+# avenant classifications). Positions/coefficients distincts de la grille
+# Ingénieurs et Cadres (GRILLE_SYNTEC_CADRES) : ne pas confondre les deux
+# échelles, cf. bugs cas_06 et cas_18 (positions cadres appliquées à tort
+# à des salariés ETAM). Dict volontairement limité aux entrées vérifiées
+# via deux sources indépendantes (salerya.fr, mapaye.fr) ; ne pas
+# compléter les échelons manquants sans la même vérification.
+GRILLE_SYNTEC_ETAM = {
+    "1.1": 240,
+    "1.2": 250,
 }
 
 # Paramètres de l'accord d'entreprise Soft IT (cf. structure_donnees_soft_it.md §5.2)
@@ -403,7 +416,7 @@ def cas_synthetiques(fake: Faker) -> list[dict]:
             poste="Développeur Backend",
             date_effet=date(2025, 3, 1),
             position="2.1",
-            coefficient=GRILLE_SYNTEC["2.1"],
+            coefficient=GRILLE_SYNTEC_CADRES["2.1"],
             remuneration_annuelle_brute=42000,
             remuneration_mensuelle_brute=3500,
             periode_essai_mois=3,
@@ -435,7 +448,7 @@ def cas_synthetiques(fake: Faker) -> list[dict]:
             poste="Chef de Projet",
             date_effet=date(2024, 9, 1),
             position="3.1",
-            coefficient=GRILLE_SYNTEC["3.1"],
+            coefficient=GRILLE_SYNTEC_CADRES["3.1"],
             remuneration_annuelle_brute=58000,
             remuneration_mensuelle_brute=4833.33,
             periode_essai_mois=None,
@@ -468,7 +481,7 @@ def cas_synthetiques(fake: Faker) -> list[dict]:
             poste="Testeur QA",
             date_effet=date(2023, 6, 1),
             position="1.2",
-            coefficient=GRILLE_SYNTEC["1.2"],
+            coefficient=GRILLE_SYNTEC_CADRES["1.2"],
             remuneration_annuelle_brute=34000,
             remuneration_mensuelle_brute=2833.33,
             periode_essai_mois=None,
@@ -504,14 +517,12 @@ def cas_synthetiques(fake: Faker) -> list[dict]:
             poste="Assistant Administratif",
             date_effet=date(2025, 1, 6),
             statut=StatutSalarie.ETAM,
-            # GRILLE_SYNTEC (ci-dessus) est la grille Ingénieurs et Cadres,
-            # pas la grille ETAM. Dans la grille ETAM de la CCN SYNTEC
-            # (IDCC 1486, avenant classifications), la position 1.1
-            # (niveau d'entrée, "exécution d'instructions") correspond au
-            # coefficient 240 - cohérent avec le profil junior visé ici
-            # ("Assistant Administratif").
+            # Position 1.1 = niveau d'entrée ("exécution d'instructions"),
+            # cohérente avec le profil junior visé ici ("Assistant
+            # Administratif"). Coefficient tiré de GRILLE_SYNTEC_ETAM,
+            # pas de GRILLE_SYNTEC_CADRES (cf. bug corrigé sur ce cas).
             position="1.1",
-            coefficient=240,
+            coefficient=GRILLE_SYNTEC_ETAM["1.1"],
             remuneration_annuelle_brute=28000,
             remuneration_mensuelle_brute=2333.33,
             periode_essai_mois=2,
@@ -543,7 +554,7 @@ def cas_synthetiques(fake: Faker) -> list[dict]:
             poste="Administrateur Réseau",
             date_effet=date(2024, 4, 1),
             position="2.2",
-            coefficient=GRILLE_SYNTEC["2.2"],
+            coefficient=GRILLE_SYNTEC_CADRES["2.2"],
             remuneration_annuelle_brute=45000,
             remuneration_mensuelle_brute=3750,
             periode_essai_mois=None,
@@ -575,7 +586,7 @@ def cas_synthetiques(fake: Faker) -> list[dict]:
             poste="Consultant Fonctionnel",
             date_effet=date(2022, 9, 1),
             position="2.3",
-            coefficient=GRILLE_SYNTEC["2.3"],
+            coefficient=GRILLE_SYNTEC_CADRES["2.3"],
             remuneration_annuelle_brute=48000,
             remuneration_mensuelle_brute=4000,
             periode_essai_mois=None,
@@ -613,7 +624,7 @@ def cas_synthetiques(fake: Faker) -> list[dict]:
             poste="Technicien Support",
             date_effet=date(2025, 5, 12),
             position="1.2",
-            coefficient=GRILLE_SYNTEC["1.2"],
+            coefficient=GRILLE_SYNTEC_CADRES["1.2"],
             remuneration_annuelle_brute=32000,
             remuneration_mensuelle_brute=2666.67,
             periode_essai_mois=2,
@@ -649,7 +660,7 @@ def cas_synthetiques(fake: Faker) -> list[dict]:
             poste="Ingénieur Cloud",
             date_effet=date(2023, 11, 1),
             position="2.2",
-            coefficient=GRILLE_SYNTEC["2.2"],
+            coefficient=GRILLE_SYNTEC_CADRES["2.2"],
             remuneration_annuelle_brute=50000,
             remuneration_mensuelle_brute=4166.67,
             periode_essai_mois=None,
@@ -682,7 +693,7 @@ def cas_synthetiques(fake: Faker) -> list[dict]:
             date_effet=date(2026, 3, 1),
             type_contrat="CDD",
             position="1.2",
-            coefficient=GRILLE_SYNTEC["1.2"],
+            coefficient=GRILLE_SYNTEC_CADRES["1.2"],
             remuneration_annuelle_brute=36000,
             remuneration_mensuelle_brute=3000,
             periode_essai_mois=None,
@@ -715,7 +726,7 @@ def cas_synthetiques(fake: Faker) -> list[dict]:
             poste="Data Analyst",
             date_effet=date(2026, 6, 1),
             position="2.1",
-            coefficient=GRILLE_SYNTEC["2.1"],
+            coefficient=GRILLE_SYNTEC_CADRES["2.1"],
             remuneration_annuelle_brute=40000,
             remuneration_mensuelle_brute=3333.33,
             periode_essai_mois=3,
@@ -822,15 +833,13 @@ def cas_synthetiques(fake: Faker) -> list[dict]:
             poste="Gestionnaire Administratif et Paie",
             date_effet=date_effet_18,
             statut=StatutSalarie.ETAM,
-            # GRILLE_SYNTEC (ci-dessus) reflète la grille Ingénieurs et
-            # Cadres, pas la grille ETAM : ses positions ne s'appliquent
-            # pas ici. Dans la grille ETAM de la CCN SYNTEC (IDCC 1486,
-            # avenant classifications), le coefficient 250 correspond à
-            # la position 1.2. Seuls statut+coefficient+ancienneté
-            # comptent pour RG-06 (préavis), pas la valeur de `position`
-            # en soi, mais la cohérence des données doit être respectée.
+            # Coefficient tiré de GRILLE_SYNTEC_ETAM, pas de
+            # GRILLE_SYNTEC_CADRES (cf. bug corrigé sur ce cas). Seuls
+            # statut+coefficient+ancienneté comptent pour RG-06 (préavis),
+            # pas la valeur de `position` en soi, mais la cohérence des
+            # données doit être respectée.
             position="1.2",
-            coefficient=250,
+            coefficient=GRILLE_SYNTEC_ETAM["1.2"],
             remuneration_annuelle_brute=38000,
             remuneration_mensuelle_brute=3166.67,
             periode_essai_mois=None,
