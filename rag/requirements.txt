@@ -1,2 +1,9 @@
 # requirements.txt — service rag
 # Dépendances à ajouter phase par phase.
+
+fastapi>=0.110,<1
+uvicorn[standard]>=0.29
+pydantic>=2.7,<3
+pdfplumber>=0.11,<1
+qdrant-client>=1.9,<2
+httpx>=0.27,<1

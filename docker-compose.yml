@@ -9,18 +9,29 @@
 # (docker-compose.dev.yml, ou la reservation GPU reste commentee faute de
 # GPU/NVIDIA Container Toolkit en local), elle est active ici car cette VM
 # est la cible reelle et dispose du toolkit installe.
+#
+# llm-server et qdrant publient leur port sur 127.0.0.1 (host) en plus du
+# reseau interne docker-compose : le service rag/ (sprint D.6 partiel)
+# n'a pas encore de Dockerfile et tourne directement via python sur
+# l'hote de la VM (cf. rag/app/config.py) - il ne peut donc pas resoudre
+# les noms DNS internes au reseau compose (llm-server, qdrant) et doit
+# les joindre via localhost. Binder sur 127.0.0.1 (pas 0.0.0.0) preserve
+# l'absence d'exposition publique : seul un processus local a la VM peut
+# s'y connecter, le firewall/l'exterieur n'y a toujours pas acces.
 
 services:
   llm-server:
     image: ollama/ollama:latest
     volumes:
       - ollama_models:/root/.ollama
+    ports:
+      - "127.0.0.1:11434:11434"
     expose:
       - "11434"
-    # Port 11434 non publie sur le host / non ouvert dans le firewall de la
-    # VM : seuls les autres conteneurs du reseau docker-compose y accedent
-    # (endpoint compatible OpenAI sur http://llm-server:11434/v1, voir
-    # llm/README.md).
+    # Cf. commentaire en tete de fichier : port publie sur 127.0.0.1
+    # uniquement (pas de mapping public), pour l'usage host-level de
+    # rag/. Reste aussi accessible depuis les autres conteneurs du reseau
+    # docker-compose via http://llm-server:11434/v1 (voir llm/README.md).
     deploy:
       resources:
         reservations:
@@ -29,5 +40,20 @@ services:
               capabilities: [gpu]
               count: 1
 
+  qdrant:
+    image: qdrant/qdrant:latest
+    volumes:
+      - qdrant_data:/qdrant/storage
+    ports:
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
+    expose:
+      - "6333"
+      - "6334"
+    # Base vectorielle du RAG (rag/app/ingestion/ingest.py,
+    # rag/app/main.py). Port publie sur 127.0.0.1 uniquement, meme
+    # raison que llm-server ci-dessus.
+
 volumes:
   ollama_models:
+  qdrant_data:
