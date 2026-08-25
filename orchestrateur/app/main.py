@@ -67,6 +67,11 @@ def _startup():
     init_db()
 
 
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
 def _audit(session, dossier_id: str, acteur: str, action: str, resultat: str, details: dict | None = None):
     session.add(
         AuditLog(
