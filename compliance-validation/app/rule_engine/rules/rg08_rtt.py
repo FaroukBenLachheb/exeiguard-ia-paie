@@ -12,6 +12,13 @@ externalisé (config/settings/ ne contient qu'un .gitkeep à ce stade,
 aucun accord_entreprise_soft_it.yaml n'existe encore). A externaliser dès
 que ce fichier existera, pour éviter que ce Rule Engine et
 scripts/generate_fixtures.py ne dérivent chacun sur leur propre valeur.
+
+Vérifié contre docs/architecture/references/convention_collective_syntec.pdf
+(texte intégral, avenant n°46 du 16 juillet 2021) : aucun enrichissement
+trouvé. L'Art. 6.1 renvoie à un accord de branche distinct (22 juin 1999,
+modifié 1er avril 2014) pour l'aménagement du temps de travail sur
+l'année, sans donner de nombre de jours RTT dans ce document - le
+sourcing reste donc accord d'entreprise Soft IT seul.
 """
 
 from shared.schemas import DossierSalarie

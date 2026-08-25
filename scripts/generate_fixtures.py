@@ -924,6 +924,150 @@ def cas_synthetiques(fake: Faker) -> list[dict]:
         ),
     )
 
+    # --- Cas 21 : période d'essai ETAM 2 mois, conforme (Art 3.4 CCN SYNTEC) ---
+    # Coefficient 245 : dans la borne [240, 250] de l'Art 3.4, plafond 2 mois.
+    prenom = fake.first_name()
+    ajoute(
+        "cas_21_periode_essai_etam_2mois_conforme",
+        "Cas conforme - période d'essai ETAM de 2 mois, coefficient 245 "
+        "(borne [240, 250], plafond 2 mois selon l'Article 3.4 de la CCN "
+        "SYNTEC)",
+        dict(
+            prenom=prenom,
+            nationalite="Française",
+            poste="Technicien Support Niveau 2",
+            date_effet=date(2025, 4, 1),
+            statut=StatutSalarie.ETAM,
+            position="1.3",
+            coefficient=245,
+            remuneration_annuelle_brute=30000,
+            remuneration_mensuelle_brute=2500,
+            periode_essai_mois=2,
+            clause_non_concurrence=False,
+            date_signature=date(2025, 3, 20),
+            lieu_signature="Paris",
+        ),
+        dict(
+            periode=date(2026, 6, 1),
+            prenom=prenom,
+            poste="Technicien Support Niveau 2",
+            type_contrat=TypeContrat.CDI,
+            debut_contrat=date(2025, 4, 1),
+            salaire_an=30000,
+            mutuelle="Seul",
+            nb_ticket_restaurant=16,
+            pass_navigo=True,
+        ),
+    )
+
+    # --- Cas 22 : période d'essai ETAM 4 mois, hors limite (Art 3.4 CCN SYNTEC) ---
+    # CAS VOLONTAIREMENT NON CONFORME, même logique que cas_17/cas_19 :
+    # coefficient 300 relève de la borne [275, 500] de l'Art 3.4 (plafond 3
+    # mois), mais periode_essai_mois=4 dépasse ce plafond. Sert à vérifier
+    # que RG-04 détecte bien une violation pour la borne ETAM haute, pas
+    # seulement pour la borne cadre (déjà couverte par cas_17).
+    prenom = fake.first_name()
+    ajoute(
+        "cas_22_periode_essai_etam_3mois_hors_limite",
+        "Cas VOLONTAIREMENT NON CONFORME - période d'essai ETAM de 4 mois, "
+        "coefficient 300 (borne [275, 500], plafond 3 mois selon l'Article "
+        "3.4 de la CCN SYNTEC - RG-04 doit détecter la violation)",
+        dict(
+            prenom=prenom,
+            nationalite="Française",
+            poste="Technicien Supérieur",
+            date_effet=date(2025, 4, 1),
+            statut=StatutSalarie.ETAM,
+            position="2.1",
+            coefficient=300,
+            remuneration_annuelle_brute=34000,
+            remuneration_mensuelle_brute=2833.33,
+            periode_essai_mois=4,
+            clause_non_concurrence=False,
+            date_signature=date(2025, 3, 20),
+            lieu_signature="Paris",
+        ),
+        dict(
+            periode=date(2026, 6, 1),
+            prenom=prenom,
+            poste="Technicien Supérieur",
+            type_contrat=TypeContrat.CDI,
+            debut_contrat=date(2025, 4, 1),
+            salaire_an=34000,
+            mutuelle="Seul",
+            nb_ticket_restaurant=16,
+            pass_navigo=True,
+        ),
+    )
+
+    # --- Cas 23 : ancienneté 10 ans, palier congés d'ancienneté (Art 5.1 pt 2) ---
+    prenom = fake.first_name()
+    date_effet_23 = _decale_mois(PERIODE_EVP, -121)  # 10 ans et 1 mois
+    ajoute(
+        "cas_23_anciennete_dix_ans",
+        "Cas informatif - ancienneté de 10 ans et 1 mois, atteint le "
+        "deuxième palier de congés d'ancienneté CCN SYNTEC (2 jours "
+        "ouvrés, Article 5.1 point 2)",
+        dict(
+            prenom=prenom,
+            nationalite="Française",
+            poste="Architecte Logiciel",
+            date_effet=date_effet_23,
+            position="3.1",
+            coefficient=170,
+            remuneration_annuelle_brute=55000,
+            remuneration_mensuelle_brute=4583.33,
+            periode_essai_mois=None,
+            date_signature=date_effet_23 - timedelta(days=1),
+            lieu_signature="Paris",
+        ),
+        dict(
+            periode=PERIODE_EVP,
+            prenom=prenom,
+            poste="Architecte Logiciel",
+            type_contrat=TypeContrat.CDI,
+            debut_contrat=date_effet_23,
+            salaire_an=55000,
+            mutuelle="Seul",
+            nb_ticket_restaurant=16,
+            pass_navigo=True,
+        ),
+    )
+
+    # --- Cas 24 : ancienneté 20 ans, palier maximum (Art 5.1 pt 2) ---
+    prenom = fake.first_name()
+    date_effet_24 = _decale_mois(PERIODE_EVP, -241)  # 20 ans et 1 mois
+    ajoute(
+        "cas_24_anciennete_vingt_ans",
+        "Cas informatif - ancienneté de 20 ans et 1 mois, atteint le "
+        "palier maximum de congés d'ancienneté CCN SYNTEC (4 jours "
+        "ouvrés, Article 5.1 point 2)",
+        dict(
+            prenom=prenom,
+            nationalite="Française",
+            poste="Directeur Technique",
+            date_effet=date_effet_24,
+            position="3.3",
+            coefficient=270,
+            remuneration_annuelle_brute=80000,
+            remuneration_mensuelle_brute=6666.67,
+            periode_essai_mois=None,
+            date_signature=date_effet_24 - timedelta(days=1),
+            lieu_signature="Paris",
+        ),
+        dict(
+            periode=PERIODE_EVP,
+            prenom=prenom,
+            poste="Directeur Technique",
+            type_contrat=TypeContrat.CDI,
+            debut_contrat=date_effet_24,
+            salaire_an=80000,
+            mutuelle="Avec enfants",
+            nb_ticket_restaurant=16,
+            pass_navigo=True,
+        ),
+    )
+
     return cas
 
 

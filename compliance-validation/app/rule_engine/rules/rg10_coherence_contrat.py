@@ -5,8 +5,15 @@ RG-10 - Cohérence contrat / identification du dossier.
 
 Source : Code du travail, art. L1221-2 (le CDI est la forme normale et
 générale de la relation de travail ; il ne comporte pas de terme) +
-gouvernance des données, dérivée des anomalies réelles observées en D.4
-(cf. shared/schemas/evp.py sur le fallback matricule/nom/prénom).
+Article 7.4 de la CCN SYNTEC (IDCC 1486), texte intégral vérifié dans
+docs/architecture/references/convention_collective_syntec.pdf (avenant
+n°46 du 16 juillet 2021) : "Le bulletin de paie doit comporter les
+mentions règlementaires et notamment [...] le nom et le prénom de la
+personne à qui est délivré le bulletin de paie" - la CCN elle-même ancre
+l'identification d'un salarié sur (nom, prénom), jamais sur un matricule
+seul. Complété par la gouvernance des données dérivée des anomalies
+réelles observées en D.4 (cf. shared/schemas/evp.py sur le fallback
+matricule/nom/prénom).
 
 (a) Un CDI ne doit jamais avoir d'EVP portant une date de fin de contrat.
     Déjà garanti par EVPMensuel.cdi_sans_date_fin (Pydantic) en amont :
@@ -27,7 +34,7 @@ from shared.schemas import DossierSalarie
 from .base import ResultatRegle
 
 REGLE_ID = "RG-10"
-SOURCE = "Code du travail, art. L1221-2 (CDI sans terme) + gouvernance des données"
+SOURCE = "Code du travail, art. L1221-2 (CDI sans terme) + Article 7.4 CCN SYNTEC (bulletin : nom/prénom)"
 
 
 def evaluer(dossier: DossierSalarie) -> ResultatRegle:

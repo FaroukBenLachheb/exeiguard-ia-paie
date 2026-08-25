@@ -19,6 +19,12 @@ Deux niveaux de vérification :
   d'indemnité / 12 mois de durée) : un écart n'est pas en soi une
   non-conformité légale, seul l'accord d'entreprise fixe ces valeurs de
   référence et une clause peut légitimement s'en écarter au cas par cas.
+
+Vérifié contre docs/architecture/references/convention_collective_syntec.pdf
+(texte intégral, avenant n°46 du 16 juillet 2021) : aucun enrichissement
+trouvé. Le terme "concurrence" n'apparaît nulle part dans ce document - la
+CCN SYNTEC (texte de base) ne traite pas des clauses de non-concurrence,
+le sourcing reste donc jurisprudence + accord d'entreprise Soft IT seuls.
 """
 
 from shared.schemas import DossierSalarie

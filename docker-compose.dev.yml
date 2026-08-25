@@ -15,7 +15,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-exeiguard}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-exeiguard_paie}
       POSTGRES_DB: ${POSTGRES_DB:-exeiguard_poc}
-    expose:
+    ports:
       - "5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data

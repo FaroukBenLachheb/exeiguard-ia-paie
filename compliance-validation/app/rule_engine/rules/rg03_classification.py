@@ -3,9 +3,25 @@ compliance-validation/app/rule_engine/rules/rg03_classification.py
 
 RG-03 - Cohérence position/coefficient (grille de classification SYNTEC).
 
-Source : CCN SYNTEC (IDCC 1486), grille de classification - Ingénieurs et
-Cadres (positions 1.1 à 3.3) et grille ETAM (positions 1.1/1.2 vérifiées),
-telles que consolidées dans shared/reference_data/grilles_syntec.py.
+Source : Article 7.2 de la CCN SYNTEC (IDCC 1486) - "Les classifications
+des employés, techniciens et agents de maîtrise (ETAM) figurent en
+annexe 1 de la convention collective [...] Les classifications des
+ingénieurs et cadres figurent en annexe 2" - complété par l'Article 3.2
+("la classification et le coefficient hiérarchique" figurent parmi les
+mentions obligatoires du contrat de travail). Texte intégral vérifié
+dans docs/architecture/references/convention_collective_syntec.pdf
+(avenant n°46 du 16 juillet 2021).
+
+Limite connue et IMPORTANTE : les Annexes I (grille ETAM complète) et II
+(grille Cadres complète) ne sont PAS incluses dans ce document ("texte de
+base : préambule et articles 1.1 à 13.6", cf. le glossaire du PDF et
+docs/architecture/references/README.md). Les grilles position->coefficient
+utilisées ici (GRILLE_SYNTEC_CADRES/GRILLE_SYNTEC_ETAM dans
+shared/reference_data/grilles_syntec.py) restent donc sourcées comme
+avant ce document (salerya.fr, mapaye.fr) et PAS depuis les Annexes I/II.
+Seules les bornes globales de coefficients sont confirmées par ce
+document : Cadres 95-270 (Article 3.4), ETAM 240-500 (Article 2.1,
+composition des collèges électoraux CSE).
 
 Choix d'implémentation : les grilles sont importées depuis
 shared/reference_data/grilles_syntec.py, pas depuis
@@ -25,7 +41,12 @@ from shared.schemas import DossierSalarie, StatutSalarie
 from .base import ResultatRegle
 
 REGLE_ID = "RG-03"
-SOURCE = "CCN SYNTEC (IDCC 1486), grille de classification"
+SOURCE = "Article 7.2 de la CCN SYNTEC (IDCC 1486), renvoi aux annexes I et II"
+
+# Bornes globales de coefficients confirmées par le texte de base (pas par
+# les annexes, absentes du document) : cf. docstring.
+BORNE_COEFFICIENT_CADRE = (95, 270)  # Article 3.4
+BORNE_COEFFICIENT_ETAM = (240, 500)  # Article 2.1
 
 _GRILLES_PAR_STATUT = {
     StatutSalarie.CADRE: GRILLE_SYNTEC_CADRES,
@@ -56,14 +77,23 @@ def evaluer(dossier: DossierSalarie) -> ResultatRegle:
     if coefficient_attendu is None:
         # Position absente de la grille vérifiée (cf. shared/reference_data/
         # grilles_syntec.py : GRILLE_SYNTEC_ETAM est volontairement limitée
-        # aux entrées vérifiées via deux sources indépendantes).
+        # aux entrées vérifiées via deux sources indépendantes, faute
+        # d'Annexe I/II dans le document CCN disponible). On vérifie tout de
+        # même le coefficient contre la borne globale confirmée par le texte
+        # de base (Article 3.4 / Article 2.1), à défaut de pouvoir vérifier
+        # la position exacte.
+        borne = BORNE_COEFFICIENT_CADRE if contrat.statut == StatutSalarie.CADRE else BORNE_COEFFICIENT_ETAM
+        dans_les_bornes = borne[0] <= contrat.coefficient <= borne[1]
         return ResultatRegle(
             regle_id=REGLE_ID,
             conforme=True,
             message=(
-                f"Règle non applicable : position '{contrat.position}' absente de "
-                f"la grille SYNTEC {contrat.statut} vérifiée (TODO : compléter la "
-                f"grille si cette position est légitime)."
+                f"Règle non applicable (position exacte non vérifiable) : position "
+                f"'{contrat.position}' absente de la grille SYNTEC {contrat.statut} "
+                f"vérifiée (TODO : compléter la grille si cette position est "
+                f"légitime). Coefficient {contrat.coefficient} "
+                f"{'dans' if dans_les_bornes else 'HORS'} des bornes {contrat.statut} "
+                f"confirmées ({borne[0]}-{borne[1]})."
             ),
             source=SOURCE,
         )

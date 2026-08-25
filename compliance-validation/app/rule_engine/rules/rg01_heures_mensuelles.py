@@ -23,6 +23,13 @@ alors que le bulletin réel utilise 151,67h comme tous les autres salariés
 - incohérence volontairement préservée telle quelle dans les fixtures
 (cf. scripts/generate_fixtures.py et
 docs/architecture/onboarding-technique.md).
+
+Vérifié contre docs/architecture/references/convention_collective_syntec.pdf
+(texte intégral, avenant n°46 du 16 juillet 2021) : aucun enrichissement
+trouvé. Le texte de base ne donne aucune valeur horaire hebdomadaire
+explicite (Art. 6.1/7.1 renvoient à un accord de branche distinct du 22
+juin 1999 pour l'aménagement du temps de travail, sans figure chiffrée
+dans ce document) - le sourcing reste donc Code du travail seul.
 """
 
 from __future__ import annotations

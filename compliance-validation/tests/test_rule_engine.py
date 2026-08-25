@@ -1,9 +1,12 @@
 """
 compliance-validation/tests/test_rule_engine.py
 
-Teste chacune des 10 règles du Rule Engine (RG-01 à RG-10) contre les 20
+Teste chacune des 10 règles du Rule Engine (RG-01 à RG-10) contre les 24
 cas de tests/fixtures/ (aucune donnée inventée : tout est chargé depuis
 les fixtures existantes, générées par scripts/generate_fixtures.py).
+cas_21 à cas_24 ont été ajoutés pour exercer les seuils désormais précis
+sourcés sur le texte intégral de la CCN SYNTEC (Articles 3.4 et 5.1,
+point 2, cf. docs/architecture/references/convention_collective_syntec.pdf).
 
 Pour chaque règle, on vérifie :
 - au moins un cas CONFORME ;
@@ -116,16 +119,29 @@ def test_rg03_non_conforme_coefficient_incoherent():
 
 
 # ---------------------------------------------------------------------------
-# RG-04 - Durée de la période d'essai (cadres)
+# RG-04 - Durée de la période d'essai (Article 3.4 CCN SYNTEC)
 # ---------------------------------------------------------------------------
 
-def test_rg04_conforme_periode_essai_dans_la_limite():
+def test_rg04_conforme_periode_essai_cadre_dans_la_limite():
     r = _resultat("cas_16_periode_essai_en_cours", "RG-04")
     assert r.conforme is True
 
 
-def test_rg04_non_conforme_periode_essai_hors_limite():
+def test_rg04_non_conforme_periode_essai_cadre_hors_limite():
     r = _resultat("cas_17_periode_essai_hors_limite_legale", "RG-04")
+    assert r.conforme is False
+
+
+def test_rg04_conforme_periode_essai_etam_coefficient_bas():
+    # cas_21 : ETAM coefficient 245, borne [240, 250] -> plafond 2 mois.
+    r = _resultat("cas_21_periode_essai_etam_2mois_conforme", "RG-04")
+    assert r.conforme is True
+
+
+def test_rg04_non_conforme_periode_essai_etam_coefficient_haut():
+    # cas_22 : ETAM coefficient 300, borne [275, 500] -> plafond 3 mois,
+    # periode_essai_mois=4 dépasse ce plafond.
+    r = _resultat("cas_22_periode_essai_etam_3mois_hors_limite", "RG-04")
     assert r.conforme is False
 
 
@@ -173,14 +189,28 @@ def test_rg07_informative_toujours_conforme():
         assert r.conforme is True, chemin.stem
 
 
-def test_rg07_palier_atteint_pour_anciennete_six_ans():
+def test_rg07_palier_cinq_ans_un_jour():
     r = _resultat("cas_20_anciennete_six_ans", "RG-07")
     assert "5 ans atteint" in r.message
+    assert "dus : 1." in r.message
+
+
+def test_rg07_palier_dix_ans_deux_jours():
+    r = _resultat("cas_23_anciennete_dix_ans", "RG-07")
+    assert "10 ans atteint" in r.message
+    assert "dus : 2." in r.message
+
+
+def test_rg07_palier_vingt_ans_quatre_jours():
+    r = _resultat("cas_24_anciennete_vingt_ans", "RG-07")
+    assert "20 ans atteint" in r.message
+    assert "dus : 4." in r.message
 
 
 def test_rg07_aucun_palier_pour_anciennete_courte():
     r = _resultat("cas_01_didier_reel", "RG-07")
     assert "aucun palier" in r.message
+    assert "dus : 0." in r.message
 
 
 # ---------------------------------------------------------------------------
@@ -235,23 +265,27 @@ def test_rg10_non_applicable_sans_evp():
 
 
 # ---------------------------------------------------------------------------
-# ANALYSE DE COUVERTURE - RG-01 à RG-10 sur les 20 cas de tests/fixtures/
+# ANALYSE DE COUVERTURE - RG-01 à RG-10 sur les 24 cas de tests/fixtures/
 # ---------------------------------------------------------------------------
 #
-# Résultats obtenus en exécutant evaluer_toutes_les_regles() sur les 20
-# fixtures (vérifié programmatiquement, pas estimé à la main).
+# Résultats obtenus en exécutant evaluer_toutes_les_regles() sur les 24
+# fixtures (vérifié programmatiquement, pas estimé à la main). Mise à jour
+# suite au sourcing complet sur le texte intégral de la CCN SYNTEC
+# (docs/architecture/references/convention_collective_syntec.pdf, avenant
+# n°46 du 16 juillet 2021) et à l'ajout de cas_21 à cas_24.
 #
-# RG-01 (heures hebdo/mensuelles) :
-#   - CONFORME  : 17 cas (tous sauf cas_13/14/15), heures_mensuelles=151.67h
+# RG-01 (heures hebdo/mensuelles) - sourcing inchangé (Code du travail
+# seul, aucun enrichissement CCN trouvé, cf. docstring du module) :
+#   - CONFORME  : 21 cas, heures_mensuelles=151.67h
 #   - NON CONF. : cas_13_jordan_reel, cas_14_julien_reel, cas_15_karim_reel
 #                 (139.00h/mois, incohérence réelle documentée)
-#   - Branche EVP (evp.heure_mensuel) : JAMAIS EXERCÉE. Aucune des 20
-#     fixtures ne renseigne EVPMensuel.heure_mensuel (toujours None) ->
-#     gap de fixture identifié, pas une garantie de correction de cette
-#     branche de code.
+#   - Branche EVP (evp.heure_mensuel) : JAMAIS EXERCÉE. Aucune fixture ne
+#     renseigne EVPMensuel.heure_mensuel (toujours None) -> gap de fixture
+#     identifié, pas une garantie de correction de cette branche de code.
 #
-# RG-02 (rémunération mensuelle/annuelle) :
-#   - CONFORME  : les 20 cas.
+# RG-02 (rémunération mensuelle/annuelle) - sourcing enrichi (Article 7.1
+# CCN SYNTEC + Code du travail) :
+#   - CONFORME  : les 24 cas.
 #   - NON CONF. : AUCUN CAS - structurellement impossible avec les
 #     fixtures actuelles, car ContratTravail.coherence_remuneration_mensuelle
 #     applique déjà la même tolérance (2€) à l'ingestion : un contrat qui
@@ -259,8 +293,10 @@ def test_rg10_non_applicable_sans_evp():
 #     une fixture. Ce n'est pas un manque à combler par une fixture, c'est
 #     une garantie déjà assurée en amont.
 #
-# RG-03 (classification position/coefficient) :
-#   - CONFORME  : 17 cas.
+# RG-03 (classification position/coefficient) - sourcing enrichi (Article
+# 7.2 + Article 3.2 CCN SYNTEC ; grilles position->coefficient toujours
+# hors Annexes I/II, absentes du document, cf. README des références) :
+#   - CONFORME  : 19 cas.
 #   - NON CONF. : cas_14_julien_reel (2.1/275 réel, incohérent avec 115
 #     attendu), cas_16_periode_essai_en_cours et
 #     cas_17_periode_essai_hors_limite_legale (2.1/130, incohérent avec
@@ -269,57 +305,82 @@ def test_rg10_non_applicable_sans_evp():
 #   - Statut StatutSalarie.NON_CADRE : jamais exercé, aucune fixture ne
 #     l'utilise (seuls CADRE et ETAM apparaissent) -> branche "grille non
 #     sourcée" du code non testée.
+#   - Branche "position absente de la grille, coefficient dans/hors bornes"
+#     (nouvelle, cf. Article 2.1/3.4) : exercée par cas_21/cas_22 (ETAM,
+#     coefficients 245/300 dans les bornes ETAM 240-500), mais jamais dans
+#     sa variante "hors bornes" -> gap de fixture.
 #
-# RG-04 (période d'essai cadre) :
-#   - CONFORME  : cas_02, cas_03, cas_09, cas_12, cas_16 (2 à 4 mois).
-#   - NON CONF. : cas_17_periode_essai_hors_limite_legale (6 mois).
-#   - Branche ETAM (seuil non sourcé) : exercée par cas_06_etam_non_cadre
-#     (periode_essai_mois=2, statut ETAM) -> confirmée "non applicable"
-#     comme attendu, mais aucun cas ne vérifie un vrai seuil ETAM (normal,
-#     puisque ce seuil n'est volontairement pas encore sourcé).
+# RG-04 (période d'essai, Article 3.4 CCN SYNTEC) - réécrite avec les 3
+# seuils exacts (ETAM 240-250 -> 2 mois, ETAM 275-500 -> 3 mois, Cadres
+# 95-270 -> 4 mois), le TODO ETAM est supprimé :
+#   - CONFORME  : cas_02, cas_03, cas_09, cas_12, cas_16 (cadres, 2 à 4
+#     mois) + cas_21 (ETAM coefficient 245, 2 mois <= plafond 2 mois).
+#   - NON CONF. : cas_17_periode_essai_hors_limite_legale (cadre, 6 mois
+#     > 4) + cas_22_periode_essai_etam_3mois_hors_limite (ETAM coefficient
+#     300, 4 mois > plafond 3 mois) - les DEUX bornes (cadre et ETAM haute)
+#     sont désormais exercées dans les deux sens.
+#   - Branche "hors bornes connues" (coefficient hors 240-250/275-500/95-
+#     270) : jamais exercée, aucune fixture ne porte un coefficient hors
+#     grille -> gap de fixture mineur.
 #
-# RG-05 (contrepartie non-concurrence) :
-#   - CONFORME  : 15 cas avec clause + contrepartie Soft IT (6/12 mois).
-#   - Non applicable (sans clause) : cas_03, cas_06, cas_11.
-#   - NON CONF. : AUCUN CAS. Toutes les fixtures avec
-#     clause_non_concurrence=True héritent de ACCORD_SOFT_IT, qui fixe
-#     systématiquement indemnite_non_concurrence_mois_salaire=6 - aucune
-#     fixture ne modélise une clause sans contrepartie. Contrairement à
-#     RG-02, ce N'EST PAS structurellement impossible (Pydantic n'impose
-#     aucune contrainte sur indemnite_non_concurrence_mois_salaire même
-#     si clause_non_concurrence=True) : c'est un vrai manque de fixture à
-#     combler (ex. futur cas_21 avec clause=True et indemnite=None), pas
-#     une garantie déjà assurée ailleurs.
+# RG-05 (contrepartie non-concurrence) - sourcing inchangé (jurisprudence +
+# accord Soft IT, aucun enrichissement CCN trouvé : le terme "concurrence"
+# n'apparaît nulle part dans le texte intégral) :
+#   - CONFORME  : 17 cas avec clause + contrepartie Soft IT (6/12 mois).
+#   - Non applicable (sans clause) : cas_03, cas_06, cas_11, cas_21, cas_22.
+#   - NON CONF. : AUCUN CAS - toujours un vrai gap de fixture (pas une
+#     impossibilité structurelle : Pydantic n'impose aucune contrainte sur
+#     indemnite_non_concurrence_mois_salaire même si
+#     clause_non_concurrence=True), non comblé par cas_21-24 (hors
+#     périmètre de cette itération, focalisée sur RG-04/06/07/09).
 #   - Branche "alerte valeurs Soft IT différentes" : jamais exercée non
 #     plus (toutes les fixtures utilisent exactement 6/12 mois).
 #
-# RG-06 (préavis rupture) :
-#   - CONFORME  : cas_18_demission_etam_avec_preavis (ETAM, 2 mois).
+# RG-06 (préavis rupture, Article 4.2 CCN SYNTEC) - réécrite avec : (a) le
+# cas spécial ETAM coefficients 400/450/500 (2 mois quelle que soit
+# l'ancienneté) et (b) la restriction explicite aux type_rupture
+# "demission"/"licenciement" (l'Article 4.2 ne couvre pas la rupture
+# conventionnelle ni la fin de période d'essai, cf. Article 4.1/3.4) :
+#   - CONFORME  : cas_18_demission_etam_avec_preavis (ETAM, 2 mois, >= 2
+#     ans d'ancienneté).
 #   - NON CONF. : cas_19_licenciement_cadre_preavis_insuffisant (cadre, 1
 #     mois au lieu de 3).
-#   - Non applicable (pas de rupture) : les 18 autres cas.
-#   - Branche ETAM < 2 ans (préavis 1 mois) : jamais exercée, aucune
+#   - Non applicable (pas de rupture) : les 22 autres cas.
+#   - Branche ETAM < 2 ans (préavis 1 mois) : JAMAIS EXERCÉE, aucune
 #     fixture de rupture ETAM avec ancienneté < 2 ans -> gap de fixture.
+#   - Branche ETAM coefficient 400/450/500 (préavis fixe 2 mois) : JAMAIS
+#     EXERCÉE, aucune fixture de rupture ETAM à ces coefficients -> gap de
+#     fixture (c'est exactement le profil du test de généralisation de
+#     l'Étape 4, hors dépôt).
+#   - Branche "type_rupture hors périmètre Article 4.2" (nouvelle) :
+#     JAMAIS EXERCÉE, aucune fixture rupture_conventionnelle ou
+#     fin_periode_essai n'existe -> gap de fixture.
 #
-# RG-07 (congés d'ancienneté, informative) :
+# RG-07 (congés d'ancienneté, Article 5.1 point 2, informative) - réécrite
+# pour retourner le nombre de jours dus (plus seulement le palier) :
 #   - Toujours conforme=True par construction (règle informative).
-#   - Palier atteint : cas_20_anciennete_six_ans (6 ans -> palier 5 ans).
-#   - Aucun palier : les 19 autres cas (ancienneté < 5 ans).
-#   - Paliers 10/15/20 ans : JAMAIS EXERCÉS, aucune fixture n'atteint ces
-#     seuils -> gap de fixture si ces branches doivent être vérifiées.
+#   - Palier 5 ans (1 jour) : cas_20_anciennete_six_ans.
+#   - Palier 10 ans (2 jours) : cas_23_anciennete_dix_ans (nouveau).
+#   - Palier 20 ans (4 jours) : cas_24_anciennete_vingt_ans (nouveau).
+#   - Palier 15 ans (3 jours) : JAMAIS EXERCÉ, aucune fixture n'atteint ce
+#     seuil -> gap de fixture restant (les 3 autres paliers sont désormais
+#     couverts).
+#   - Aucun palier (0 jour) : les 21 autres cas (ancienneté < 5 ans).
 #
-# RG-08 (RTT accord Soft IT) :
-#   - CONFORME  : les 20 cas (rtt_par_an=10 partout, valeur par défaut
-#     ACCORD_SOFT_IT jamais surchargée dans generate_fixtures.py).
-#   - NON CONF. : AUCUN CAS - gap de fixture réel (pas d'impossibilité
-#     structurelle, juste aucun cas synthétique ne s'en écarte).
+# RG-08 (RTT accord Soft IT) - sourcing inchangé (aucun enrichissement CCN
+# trouvé, aucun nombre de jours RTT dans le texte de base) :
+#   - CONFORME  : les 24 cas (rtt_par_an=10 partout).
+#   - NON CONF. : AUCUN CAS - gap de fixture réel, non comblé par cas_21-24.
 #
-# RG-09 (délai/organisme justification absence) :
-#   - CONFORME  : les 20 cas (24h / "H Cube" partout).
+# RG-09 (délai/organisme justification absence, Article 9.1 CCN SYNTEC +
+# accord Soft IT) - sourcing enrichi, distingue désormais les deux
+# origines dans le message :
+#   - CONFORME  : les 24 cas (24h / "H Cube" partout).
 #   - NON CONF. : AUCUN CAS - même situation que RG-08, gap de fixture.
 #
-# RG-10 (cohérence contrat/EVP) :
-#   - CONFORME  : les 20 cas (prénom EVP toujours identique au contrat,
+# RG-10 (cohérence contrat/EVP) - sourcing enrichi (Article 7.4 CCN SYNTEC
+# sur les mentions obligatoires nom/prénom du bulletin de paie) :
+#   - CONFORME  : les 24 cas (prénom EVP toujours identique au contrat,
 #     jamais de CDI avec date de fin d'EVP).
 #   - NON CONF. : AUCUN CAS - largement structurel : EVPMensuel.prenom est
 #     un champ requis (jamais None), et dans generate_fixtures.py la même
@@ -340,6 +401,11 @@ def test_rg10_non_applicable_sans_evp():
 #   RG-05, RG-08, RG-09 (gaps de fixtures réels à combler),
 #   RG-10 (impossible par construction sur le point EVP seul, gap réel
 #   uniquement sur la divergence de prénom).
+# RG-04, RG-06 et RG-07 ont gagné des cas NON CONFORME / des branches
+# supplémentaires avec cas_21-24, mais gardent chacune au moins une
+# branche non exercée (documentée ci-dessus : coefficient hors bornes
+# pour RG-03/04, ETAM<2ans et coefficients 400/450/500 et type_rupture
+# hors périmètre pour RG-06, palier 15 ans pour RG-07).
 # Ces gaps ne sont pas masqués par les tests ci-dessus : chaque test lié
 # les documente explicitement en commentaire plutôt que de se contenter
 # de vérifier silencieusement le seul cas conforme.

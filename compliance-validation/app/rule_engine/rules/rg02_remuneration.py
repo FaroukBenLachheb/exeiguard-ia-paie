@@ -3,9 +3,15 @@ compliance-validation/app/rule_engine/rules/rg02_remuneration.py
 
 RG-02 - Cohérence rémunération mensuelle / annuelle.
 
-Source : principe de mensualisation (Code du travail, art. L3242-1) - la
-rémunération mensuelle doit être stable et correspondre à 1/12e de la
-rémunération annuelle brute.
+Source : Article 7.1 de la CCN SYNTEC (IDCC 1486), texte intégral vérifié
+dans docs/architecture/references/convention_collective_syntec.pdf
+(avenant n°46 du 16 juillet 2021) : "les avantages prévus ci-dessus
+doivent être intégrés dans la rémunération annuelle dont le douzième
+(1/12) ne doit, en aucun cas, être inférieur à ce minimum" - la CCN ancre
+elle-même la rémunération mensuelle sur le douzième de l'annuelle.
+Complété par le principe général de mensualisation (Code du travail, art.
+L3242-1) : la rémunération mensuelle doit être stable et correspondre à
+1/12e de la rémunération annuelle brute.
 
 Réutilise TOLERANCE_REMUNERATION_MENSUELLE_EUR défini dans
 shared/schemas/contrat.py (ContratTravail.coherence_remuneration_mensuelle)
@@ -27,7 +33,7 @@ from shared.schemas.contrat import TOLERANCE_REMUNERATION_MENSUELLE_EUR
 from .base import ResultatRegle
 
 REGLE_ID = "RG-02"
-SOURCE = "Principe de mensualisation (Code du travail, art. L3242-1)"
+SOURCE = "Article 7.1 CCN SYNTEC (IDCC 1486) + Code du travail, art. L3242-1 (mensualisation)"
 
 
 def evaluer(dossier: DossierSalarie) -> ResultatRegle:
