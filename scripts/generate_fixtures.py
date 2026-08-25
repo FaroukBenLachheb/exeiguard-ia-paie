@@ -1068,6 +1068,222 @@ def cas_synthetiques(fake: Faker) -> list[dict]:
         ),
     )
 
+    # --- Cas 25 : démission ETAM ancienneté < 2 ans, préavis 1 mois (Art 4.2) ---
+    # Comble le gap RG-06 identifié lors de l'audit de couverture : cas_18
+    # est le seul cas ETAM avec rupture, mais son ancienneté est >= 2 ans
+    # (branche "2 mois"). Ce cas exerce la branche "< 2 ans -> 1 mois".
+    prenom = fake.first_name()
+    date_effet_25 = _decale_mois(PERIODE_EVP, -12)  # 1 an, < 2 ans
+    date_notif_25 = PERIODE_EVP
+    date_fin_25 = _decale_mois(date_notif_25, 1)
+    ajoute(
+        "cas_25_demission_etam_moins_deux_ans",
+        "Cas conforme - démission ETAM avec ancienneté < 2 ans, préavis "
+        "d'1 mois conforme à l'Article 4.2 de la CCN SYNTEC (branche "
+        "'moins de 2 ans' de RG-06, non exercée par cas_18)",
+        dict(
+            prenom=prenom,
+            nationalite="Française",
+            poste="Technicien Support Niveau 1",
+            date_effet=date_effet_25,
+            statut=StatutSalarie.ETAM,
+            position="1.3",
+            coefficient=245,
+            remuneration_annuelle_brute=29000,
+            remuneration_mensuelle_brute=2416.67,
+            periode_essai_mois=None,
+            date_signature=date_effet_25 - timedelta(days=1),
+            lieu_signature="Paris",
+        ),
+        dict(
+            periode=PERIODE_EVP,
+            prenom=prenom,
+            poste="Technicien Support Niveau 1",
+            type_contrat=TypeContrat.CDI,
+            debut_contrat=date_effet_25,
+            salaire_an=29000,
+            mutuelle="Seul",
+            nb_ticket_restaurant=16,
+            pass_navigo=True,
+        ),
+        rupture_kwargs=dict(
+            type_rupture="demission",
+            date_notification=date_notif_25,
+            date_fin_contrat_effective=date_fin_25,
+            motif="Démission - préavis CCN SYNTEC d'1 mois (ETAM, ancienneté < 2 ans)",
+        ),
+    )
+
+    # --- Cas 26 : licenciement ETAM coefficient 450, préavis fixe 2 mois (Art 4.2) ---
+    # Comble le gap RG-06 identifié lors de l'audit de couverture : la
+    # clause "coefficients hiérarchiques conventionnels 400, 450 et 500,
+    # quelle que soit leur ancienneté acquise : deux (2) mois" (Art 4.2) a
+    # été vérifiée par un diagnostic scratch (non commité) lors du test de
+    # généralisation précédent, mais jamais formalisée en fixture. Ici
+    # l'ancienneté (8 mois) est volontairement < 2 ans pour prouver que
+    # c'est bien le coefficient, et non l'ancienneté, qui détermine le
+    # préavis dans ce cas.
+    prenom = fake.first_name()
+    date_effet_26 = _decale_mois(PERIODE_EVP, -8)  # 8 mois, < 2 ans
+    date_notif_26 = PERIODE_EVP
+    date_fin_26 = _decale_mois(date_notif_26, 2)
+    ajoute(
+        "cas_26_licenciement_etam_coefficient_450",
+        "Cas conforme - licenciement ETAM coefficient 450 avec ancienneté "
+        "de 8 mois (< 2 ans), préavis de 2 mois conforme à l'Article 4.2 "
+        "de la CCN SYNTEC ('quelle que soit l'ancienneté' pour les "
+        "coefficients 400/450/500 - branche jamais formalisée en fixture "
+        "avant ce cas)",
+        dict(
+            prenom=prenom,
+            nationalite="Française",
+            poste="Agent de Maîtrise Support",
+            date_effet=date_effet_26,
+            statut=StatutSalarie.ETAM,
+            position="3.1",
+            coefficient=450,
+            remuneration_annuelle_brute=44000,
+            remuneration_mensuelle_brute=3666.67,
+            periode_essai_mois=None,
+            date_signature=date_effet_26 - timedelta(days=1),
+            lieu_signature="Paris",
+        ),
+        dict(
+            periode=PERIODE_EVP,
+            prenom=prenom,
+            poste="Agent de Maîtrise Support",
+            type_contrat=TypeContrat.CDI,
+            debut_contrat=date_effet_26,
+            salaire_an=44000,
+            mutuelle="Seul",
+            nb_ticket_restaurant=16,
+            pass_navigo=True,
+        ),
+        rupture_kwargs=dict(
+            type_rupture="licenciement",
+            date_notification=date_notif_26,
+            date_fin_contrat_effective=date_fin_26,
+            motif="Licenciement - préavis de 2 mois (ETAM coefficient 450, "
+            "quelle que soit l'ancienneté, Article 4.2 CCN SYNTEC)",
+        ),
+    )
+
+    # --- Cas 27 : ancienneté 15 ans, palier congés d'ancienneté (Art 5.1 pt 2) ---
+    # Comble le gap RG-07 identifié lors de l'audit de couverture : seuls
+    # les paliers 5/10/20 ans étaient exercés (cas_20/cas_23/cas_24).
+    prenom = fake.first_name()
+    date_effet_27 = _decale_mois(PERIODE_EVP, -181)  # 15 ans et 1 mois
+    ajoute(
+        "cas_27_anciennete_quinze_ans",
+        "Cas informatif - ancienneté de 15 ans et 1 mois, atteint le "
+        "troisième palier de congés d'ancienneté CCN SYNTEC (3 jours "
+        "ouvrés, Article 5.1 point 2)",
+        dict(
+            prenom=prenom,
+            nationalite="Française",
+            poste="Expert Technique",
+            date_effet=date_effet_27,
+            position="3.2",
+            coefficient=210,
+            remuneration_annuelle_brute=62000,
+            remuneration_mensuelle_brute=5166.67,
+            periode_essai_mois=None,
+            date_signature=date_effet_27 - timedelta(days=1),
+            lieu_signature="Paris",
+        ),
+        dict(
+            periode=PERIODE_EVP,
+            prenom=prenom,
+            poste="Expert Technique",
+            type_contrat=TypeContrat.CDI,
+            debut_contrat=date_effet_27,
+            salaire_an=62000,
+            mutuelle="Seul",
+            nb_ticket_restaurant=16,
+            pass_navigo=True,
+        ),
+    )
+
+    # --- Cas 28 : rtt_par_an divergent, non conforme (RG-08) ---
+    # CAS VOLONTAIREMENT NON CONFORME (comme cas_17/19/22, pas une donnée
+    # terrain réelle) : rtt_par_an=8 au lieu des 10 jours de l'accord
+    # d'entreprise Soft IT (ACCORD_SOFT_IT), pour vérifier que RG-08
+    # détecte bien une divergence, pas seulement confirmer les cas
+    # conformes. Comble le gap RG-08 identifié lors de l'audit de
+    # couverture (les 24 cas précédents utilisaient tous rtt_par_an=10).
+    prenom = fake.first_name()
+    ajoute(
+        "cas_28_rtt_non_conforme",
+        "Cas VOLONTAIREMENT NON CONFORME - rtt_par_an=8, divergent des 10 "
+        "jours de l'accord d'entreprise Soft IT (RG-08 doit détecter la "
+        "divergence ; valeur non issue d'une observation terrain)",
+        dict(
+            prenom=prenom,
+            nationalite="Française",
+            poste="Développeur Full Stack",
+            date_effet=date(2024, 1, 1),
+            position="2.1",
+            coefficient=115,
+            remuneration_annuelle_brute=40000,
+            remuneration_mensuelle_brute=3333.33,
+            periode_essai_mois=None,
+            rtt_par_an=8,
+            date_signature=date(2023, 12, 20),
+            lieu_signature="Paris",
+        ),
+        dict(
+            periode=date(2026, 6, 1),
+            prenom=prenom,
+            poste="Développeur Full Stack",
+            type_contrat=TypeContrat.CDI,
+            debut_contrat=date(2024, 1, 1),
+            salaire_an=40000,
+            mutuelle="Seul",
+            nb_ticket_restaurant=16,
+            pass_navigo=True,
+        ),
+    )
+
+    # --- Cas 29 : délai de justification d'absence divergent, non conforme (RG-09) ---
+    # CAS VOLONTAIREMENT NON CONFORME (même logique que cas_28) :
+    # delai_justification_absence_heures=48 au lieu des 24h (Article 9.1
+    # CCN SYNTEC, étendu par l'accord Soft IT), pour vérifier que RG-09
+    # détecte bien une divergence. Comble le gap RG-09 identifié lors de
+    # l'audit de couverture (les 24 cas précédents utilisaient tous 24h).
+    prenom = fake.first_name()
+    ajoute(
+        "cas_29_delai_justification_non_conforme",
+        "Cas VOLONTAIREMENT NON CONFORME - delai_justification_absence_heures=48, "
+        "divergent des 24h de l'Article 9.1 CCN SYNTEC / accord Soft IT "
+        "(RG-09 doit détecter la divergence ; valeur non issue d'une "
+        "observation terrain)",
+        dict(
+            prenom=prenom,
+            nationalite="Française",
+            poste="Chargée de Recrutement",
+            date_effet=date(2024, 2, 1),
+            position="2.1",
+            coefficient=115,
+            remuneration_annuelle_brute=38000,
+            remuneration_mensuelle_brute=3166.67,
+            periode_essai_mois=None,
+            delai_justification_absence_heures=48,
+            date_signature=date(2024, 1, 20),
+            lieu_signature="Paris",
+        ),
+        dict(
+            periode=date(2026, 6, 1),
+            prenom=prenom,
+            poste="Chargée de Recrutement",
+            type_contrat=TypeContrat.CDI,
+            debut_contrat=date(2024, 2, 1),
+            salaire_an=38000,
+            mutuelle="Seul",
+            nb_ticket_restaurant=16,
+            pass_navigo=True,
+        ),
+    )
+
     return cas
 
 
