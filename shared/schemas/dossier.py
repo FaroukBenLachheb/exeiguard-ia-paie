@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from .bulletin import BulletinSalaire
 from .contrat import ContratTravail
 from .evp import EVPMensuel
+from .rupture import RuptureContrat
 
 
 class DossierSalarie(BaseModel):
@@ -22,6 +23,8 @@ class DossierSalarie(BaseModel):
     contrat: ContratTravail
     evp_historique: list[EVPMensuel] = Field(default_factory=list)
     bulletins_historique: list[BulletinSalaire] = Field(default_factory=list)
+    # None pour un dossier actif ; renseigné pour un dossier en fin de contrat.
+    rupture: Optional[RuptureContrat] = None
 
     def dernier_evp(self) -> Optional[EVPMensuel]:
         return self.evp_historique[-1] if self.evp_historique else None

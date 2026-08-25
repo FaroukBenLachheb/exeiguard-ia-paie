@@ -18,6 +18,7 @@ from shared.schemas import (
     DossierSalarie,
     EVPMensuel,
     LigneCotisation,
+    RuptureContrat,
     StatutSalarie,
     TypeAbsence,
     TypeContrat,
@@ -256,3 +257,27 @@ def test_dossier_salarie_didier():
     )
     assert dossier.dernier_bulletin().net_a_payer == 3073.79
     assert dossier.bulletin_precedent() is None  # un seul bulletin en historique
+
+
+# ---------------------------------------------------------------------------
+# Rupture de contrat
+# ---------------------------------------------------------------------------
+
+def test_rupture_valide():
+    rupture = RuptureContrat(
+        type_rupture="demission",
+        date_notification=date(2026, 6, 1),
+        date_fin_contrat_effective=date(2026, 8, 1),
+        motif="Démission - préavis de 2 mois",
+    )
+    assert rupture.type_rupture == "demission"
+    assert rupture.date_fin_contrat_effective > rupture.date_notification
+
+
+def test_rupture_date_fin_anterieure_rejetee():
+    with pytest.raises(ValidationError):
+        RuptureContrat(
+            type_rupture="licenciement",
+            date_notification=date(2026, 6, 1),
+            date_fin_contrat_effective=date(2026, 5, 1),  # antérieure à la notification
+        )
