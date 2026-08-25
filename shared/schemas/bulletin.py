@@ -1,5 +1,6 @@
-"""
+ """
 Schéma du bulletin de salaire (sortie du mock Sage en PoC, sortie Sage réelle en prod).
+
 
 Dérivé des deux bulletins réels Soft IT (Didier, Sindhuja) — mai 2026.
 Point d'attention observé : certaines lignes sont conditionnelles
