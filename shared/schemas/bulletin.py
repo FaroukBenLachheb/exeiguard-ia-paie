@@ -1,4 +1,4 @@
- """
+"""
 Schéma du bulletin de salaire (sortie du mock Sage en PoC, sortie Sage réelle en prod).
 
 
