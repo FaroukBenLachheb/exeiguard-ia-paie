@@ -6,7 +6,7 @@ RG-03 - Cohérence position/coefficient (grille de classification SYNTEC).
 Source : Article 7.2 de la CCN SYNTEC (IDCC 1486) - "Les classifications
 des employés, techniciens et agents de maîtrise (ETAM) figurent en
 annexe 1 de la convention collective [...] Les classifications des
-ingénieurs et cadres figurent en annexe 2" - complété par l'Article 3.2
+ingénieurs et cadres figurent en annexe 2" -- complété par l'Article 3.2
 ("la classification et le coefficient hiérarchique" figurent parmi les
 mentions obligatoires du contrat de travail). Texte intégral vérifié
 dans docs/architecture/references/convention_collective_syntec.pdf
@@ -43,7 +43,7 @@ from .base import ResultatRegle
 REGLE_ID = "RG-03"
 SOURCE = "Article 7.2 de la CCN SYNTEC (IDCC 1486), renvoi aux annexes I et II"
 
-# Bornes globales de coefficients confirmées par le texte de base (pas par
+# Bornes globales de coefficients confirmées par le texte de base ( pas par
 # les annexes, absentes du document) : cf. docstring.
 BORNE_COEFFICIENT_CADRE = (95, 270)  # Article 3.4
 BORNE_COEFFICIENT_ETAM = (240, 500)  # Article 2.1
@@ -80,7 +80,7 @@ def evaluer(dossier: DossierSalarie) -> ResultatRegle:
         # aux entrées vérifiées via deux sources indépendantes, faute
         # d'Annexe I/II dans le document CCN disponible). On vérifie tout de
         # même le coefficient contre la borne globale confirmée par le texte
-        # de base (Article 3.4 / Article 2.1), à défaut de pouvoir vérifier
+        # de base (Article 3.4 / Article 2.1), à défaut de pouvoir vérifier   
         # la position exacte.
         borne = BORNE_COEFFICIENT_CADRE if contrat.statut == StatutSalarie.CADRE else BORNE_COEFFICIENT_ETAM
         dans_les_bornes = borne[0] <= contrat.coefficient <= borne[1]
