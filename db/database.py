@@ -19,7 +19,7 @@ from models import Base
 
 def _default_postgres_url() -> str:
     user = os.getenv("POSTGRES_USER", "exeiguard")
-    password = os.getenv("POSTGRES_PASSWORD", "changeme_local")
+    password = os.getenv("POSTGRES_PASSWORD", "exeiguard_paie")
     host = os.getenv("POSTGRES_HOST", "localhost")
     port = os.getenv("POSTGRES_PORT", "5432")
     db = os.getenv("POSTGRES_DB", "exeiguard_poc")
