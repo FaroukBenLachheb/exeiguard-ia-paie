@@ -1,0 +1,384 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{textcomp}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{longtable}
+\usepackage{array}
+
+\hypersetup{colorlinks=true, linkcolor=blue!50!black, urlcolor=blue!50!black, citecolor=blue!50!black}
+
+\lstset{
+  basicstyle=\ttfamily\scriptsize,
+  breaklines=true,
+  breakatwhitespace=false,
+  columns=fullflexible,
+  frame=single,
+  backgroundcolor=\color{black!4},
+  showstringspaces=false,
+  xleftmargin=2pt,
+  xrightmargin=2pt
+}
+
+\titlespacing*{\section}{0pt}{1.4em}{0.6em}
+\titlespacing*{\subsection}{0pt}{1.1em}{0.5em}
+\titlespacing*{\subsubsection}{0pt}{0.9em}{0.4em}
+
+\newcommand{\etat}[2]{\textbf{#1} : #2}
+\newcommand{\ok}{\textcolor{green!45!black}{\textbf{OK}}}
+\newcommand{\ko}{\textcolor{red!60!black}{\textbf{NON}}}
+\newcommand{\partiel}{\textcolor{orange!70!black}{\textbf{PARTIEL}}}
+
+\title{\'Etat technique du projet ExeiGuard IA Paie}
+\author{V\'erification en direct dans une session de travail locale\\(machine Windows locale, hors VM OVH cible)}
+\date{28 ao\^ut 2026}
+
+\begin{document}
+\maketitle
+
+\begin{quote}
+\small
+\textbf{Note de m\'ethode.} Toutes les affirmations de ce document ont \'et\'e v\'erifi\'ees dans cette session, contre l'\'etat r\'eel du d\'ep\^ot au commit \path{9cd7f4c} (branche \path{main}, arbre de travail propre), sur une machine Windows locale --- pas la VM OVH cible d\'ecrite dans les documents ant\'erieurs du d\'ep\^ot. Aucune affirmation n'est reprise telle quelle d'un document pr\'eexistant (\path{README.md}, \path{docs/architecture/*.md}) sans avoir \'et\'e rejou\'ee ici. Quand une v\'erification n'a pas \'et\'e possible dans cet environnement, cela est dit explicitement plut\^ot qu'omis.
+\end{quote}
+
+\tableofcontents
+
+% =====================================================================
+\section{R\'esum\'e ex\'ecutif}
+% =====================================================================
+
+Ce qui peut \^etre d\'emontr\'e de bout en bout \emph{aujourd'hui}, v\'erifi\'e dans cette session : un dossier salari\'e traverse r\'eellement les 6 \'etats du pipeline (A1 \`a A6, puis TERMIN\'E) via l'API HTTP r\'eelle du service orchestrateur, chaque transition \'etant journalis\'ee dans \path{audit_log} en PostgreSQL --- v\'erifi\'e par appels \texttt{curl} r\'eels contre un conteneur reconstruit \`a partir du code actuel du d\'ep\^ot, puis par une requ\^ete SQL directe (voir \S\ref{sec:orchestrateur}). La suite de tests compl\`ete du d\'ep\^ot (\path{python -m pytest} depuis la racine, avec un vrai PostgreSQL) retourne exactement \textbf{59 passed, 0 failed} (\S\ref{sec:tests-global}).
+
+L'\'ecart principal entre ``ce qui est pr\'evu'' et ``ce qui existe'' n'est pas un manque de code : le Rule Engine (10 r\`egles RG-01 \`a RG-10, 28 tests, tous sourc\'es sur un article pr\'ecis de la CCN SYNTEC ou un accord Soft IT) et le parseur EVP Excel (16 tests) sont r\'eellement impl\'ement\'es et test\'es. L'\'ecart, c'est que \textbf{ni l'un ni l'autre n'est branch\'e sur une route API} : \path{compliance-validation} et \path{extracteur-evp} n'exposent, aujourd'hui, que \path{GET /health} --- confirm\'e en interrogeant directement \path{/openapi.json} sur des conteneurs reconstruits \`a partir du code actuel (\S\ref{sec:extracteur-evp}, \S\ref{sec:compliance}). La machine \`a \'etats de l'orchestrateur ne fait donc, pour l'instant, que changer un statut en base : aucune de ses transitions n'appelle r\'eellement l'extracteur, le Rule Engine, un mock Sage ou le RAG. \path{integration-sage} n'a aucune logique au-del\`a de \path{/health}. Le RAG (\path{POST /rag/query}) est le seul service dont la logique m\'etier est expos\'ee en API, mais il ne poss\`ede \textbf{aucun test automatis\'e} et n'a pas pu \^etre r\'e-ex\'ecut\'e dans cette session (Qdrant/Ollama non disponibles sur cette machine, \S\ref{sec:rag}).
+
+D\'ecouverte propre \`a cette session (\S\ref{sec:dette}) : les conteneurs Docker qui tournaient d\'ej\`a sur cette machine au d\'emarrage de la v\'erification \'etaient construits depuis des images vieilles de 2 \`a 3 semaines et ne refl\'etaient pas du tout le code actuel (\path{POST /dossiers} y r\'epondait 404 Not Found). Ils ont d\^u \^etre reconstruits pour que les v\'erifications de ce rapport portent sur le code r\'eellement pr\'esent dans le d\'ep\^ot aujourd'hui.
+
+% =====================================================================
+\section{Infrastructure de PoC}
+% =====================================================================
+
+Cette session s'est d\'eroul\'ee enti\`erement sur une machine Windows locale, sans acc\`es \`a la console OVH ni \`a la VM GPU cible d\'ecrite dans les documents ant\'erieurs du d\'ep\^ot : les caract\'eristiques exactes de cette instance (fournisseur, r\'egion, gabarit) et l'incident de quota mentionn\'e dans l'historique du projet n'ont donc \textbf{pas pu \^etre v\'erifi\'es dans cette session} et ne sont pas r\'eaffirm\'es ici. Les seuls \'el\'ements d'infrastructure contr\^ol\'es directement dans le d\'ep\^ot sont : \path{docker-compose.yml} (commentaire d'en-t\^ete) mentionne une cible ``VM OVH, GPU NVIDIA L4 24\,Go'' avec r\'eservation GPU \path{nvidia} active pour le service \path{llm-server} (Ollama) ; le document \path{docs/architecture/etat_technique_20260826.md} pr\'e-existant, lui, indique en en-t\^ete ``VM OVH, GPU NVIDIA A10'' --- une incoh\'erence entre deux sources du d\'ep\^ot lui-m\^eme, signal\'ee ici mais non tranch\'ee faute d'acc\`es \`a l'infrastructure r\'eelle depuis cette session.
+
+% =====================================================================
+\section{Arborescence annot\'ee du d\'ep\^ot}
+% =====================================================================
+
+Obtenue par \'enum\'eration r\'eelle du d\'ep\^ot (hors \path{.git}, \path{__pycache__}, \path{node_modules}, \path{.venv}) au commit \path{9cd7f4c}. \'Etat ``vide'' signifie : v\'erifi\'e \`a l'instant comme ne contenant qu'un \path{.gitkeep} ou un \path{__init__.py} sans code.
+
+\subsection*{Racine}
+\begin{itemize}[leftmargin=1.3em]
+\item \path{README.md} --- une seule phrase (``squelette initial du d\'ep\^ot''), non mis \`a jour depuis le commit initial \path{1978521} malgr\'e l'avancement r\'eel constat\'e ci-dessous (\'ecart document\'e en \S\ref{sec:ecarts}).
+\item \path{docker-compose.yml} --- stack VM cible (\path{llm-server} + \path{qdrant} uniquement, GPU actif).
+\item \path{docker-compose.dev.yml} --- stack de d\'eveloppement local (postgres + 4 services applicatifs + \path{llm-server} sans r\'eservation GPU).
+\item \path{pytest.ini} --- \path{addopts = --import-mode=importlib}, n\'ecessaire (voir \S\ref{sec:dette}).
+\item \path{.env.example}, \path{.dockerignore}, \path{.gitignore} --- pr\'esents et coh\'erents avec les Dockerfiles (v\'erifi\'e \S\ref{sec:dependances}).
+\end{itemize}
+
+\subsection*{\path{shared/} --- contrat de donn\'ees commun}
+\begin{itemize}[leftmargin=1.3em]
+\item \path{shared/schemas/} : \path{evp.py}, \path{contrat.py}, \path{bulletin.py}, \path{dossier.py}, \path{rupture.py} --- 5 mod\`eles Pydantic r\'eels, avec validateurs m\'etier (ex. coh\'erence r\'emun\'eration mensuelle/annuelle \`a 2\,\texteuro\ pr\`es, CDI sans date de fin). Code lu int\'egralement dans cette session.
+\item \path{shared/reference_data/grilles_syntec.py} : \path{GRILLE_SYNTEC_CADRES} (8 entr\'ees, positions 1.1 \`a 3.3) et \path{GRILLE_SYNTEC_ETAM} (\textbf{2 entr\'ees seulement} : 1.1 et 1.2) --- limite document\'ee dans le code lui-m\^eme (annexes I/II de la CCN absentes du PDF source, voir \S\ref{sec:dette}).
+\item \path{shared/tests/test_schemas.py} --- 11 tests, tous r\'eellement ex\'ecut\'es dans cette session (\S\ref{sec:tests-global}).
+\end{itemize}
+
+\subsection*{\path{db/} --- socle transactionnel}
+\begin{itemize}[leftmargin=1.3em]
+\item \path{database.py}, \path{models.py} (5 tables : \path{Dossier}, \path{EVPEnregistrement}, \path{Controle}, \path{Decision}, \path{AuditLog}).
+\item \path{migrations/versions/bcb3dbf7d6d9_initial_schema.py} --- seule migration Alembic existante.
+\item \path{test_insertion.py} --- test r\'eel, ex\'ecut\'e contre un PostgreSQL r\'eel dans cette session.
+\item \path{seeds/seed_dossiers.json} --- g\'en\'er\'e par \path{scripts/generate_fixtures.py}.
+\end{itemize}
+
+\subsection*{\path{orchestrateur/} --- machine \`a \'etats A1\textrightarrow A6}
+\begin{itemize}[leftmargin=1.3em]
+\item \path{app/main.py} : \path{GET /health}, \path{POST /dossiers}, \path{GET /dossiers/{id}/etat}, \path{POST /dossiers/{id}/transition} --- confirm\'e sur \path{/openapi.json} d'un conteneur reconstruit (\S\ref{sec:orchestrateur}).
+\item \path{app/state_machine.py} : 11 \'etats, 14 transitions nomm\'ees dont les 3 boucles A2.3/A3.3/A4.3.
+\item \path{app/schemas.py} : sch\'emas API Pydantic, distincts de \path{db/models.py}.
+\item \path{app/api/} : squelette vide (\path{__init__.py} seul) --- les routes vivent dans \path{main.py}.
+\item \path{tests/test_e2e_a1_a6.py} : 3 tests \texttt{TestClient}, tous PASSED.
+\end{itemize}
+
+\subsection*{\path{extracteur-evp/} --- extraction EVP}
+\begin{itemize}[leftmargin=1.3em]
+\item \path{app/parsers/excel_parser.py} (314 lignes) : parsing r\'eel du fichier Excel EVP, d\'etection des blocs d'absence par libell\'e (pas par position de colonne).
+\item \path{app/confidence_scoring.py} : score de confiance 0--1 par ligne.
+\item \path{app/ocr/} : vide (\path{__init__.py} seul) --- aucun parsing PDF/OCR.
+\item \path{app/main.py} : \textbf{\path{GET /health} uniquement} --- confirm\'e, le parseur n'est branch\'e sur aucune route.
+\item \path{tests/test_excel_parser.py} : 16 tests, tous PASSED.
+\end{itemize}
+
+\subsection*{\path{compliance-validation/} --- Rule Engine}
+\begin{itemize}[leftmargin=1.3em]
+\item \path{app/rule_engine/engine.py} + \path{rules/rg01_*.py} \`a \path{rg10_*.py} (10 fichiers, 731 lignes cumul\'ees hors \path{base.py}) : impl\'ementation r\'eelle et compl\`ete des 10 r\`egles, chacune sourc\'ee sur un article pr\'ecis (liste v\'erifi\'ee \S\ref{sec:compliance}).
+\item \path{app/api/} : squelette vide.
+\item \path{app/main.py} : \textbf{\path{GET /health} uniquement}.
+\item \path{tests/test_rule_engine.py} : 28 tests, tous PASSED.
+\end{itemize}
+
+\subsection*{\path{integration-sage/} --- coquille}
+\begin{itemize}[leftmargin=1.3em]
+\item \path{app/main.py} : \path{GET /health} uniquement, aucune autre logique.
+\item \path{app/api/} : squelette vide.
+\item \path{mock/} : vide (\path{.gitkeep} seul) --- aucun mock Sage \'ecrit.
+\item \path{tests/} : vide (\path{__init__.py} seul) --- \textbf{0 test collect\'e}, confirm\'e (\S\ref{sec:sage}).
+\end{itemize}
+
+\subsection*{\path{rag/} --- recherche s\'emantique CCN SYNTEC}
+\begin{itemize}[leftmargin=1.3em]
+\item \path{app/main.py} : \path{POST /rag/query} r\'eellement impl\'ement\'e (recherche Qdrant top-3 + synth\`ese Ollama optionnelle).
+\item \path{app/config.py}, \path{app/embeddings.py}, \path{app/ingestion/chunking.py}, \path{app/ingestion/ingest.py} : code r\'eel, lu int\'egralement.
+\item \path{app/api/} : squelette vide, non utilis\'e.
+\item \path{corpus/} : vide (\path{.gitkeep}) --- le corpus r\'eel est \path{docs/architecture/references/convention_collective_syntec.pdf}.
+\item \path{tests/} : vide (\path{__init__.py} seul) --- \textbf{0 test collect\'e}, confirm\'e.
+\item \path{Dockerfile} : \textbf{placeholder} (``Contenu \`a d\'efinir phase par phase''), confirm\'e par lecture directe --- ce service ne peut pas \^etre construit en conteneur en l'\'etat.
+\end{itemize}
+
+\subsection*{Dossiers transverses}
+\begin{itemize}[leftmargin=1.3em]
+\item \path{scripts/generate_fixtures.py} : g\'en\'erateur r\'eel des 29 fixtures (compt\'e : \path{ls tests/fixtures/*.json | wc -l} $\to$ 29).
+\item \path{tests/fixtures/} : 29 fichiers JSON r\'eels, \path{tests/integration/} et \path{tests/e2e/} vides (\path{.gitkeep}).
+\item \path{docs/architecture/} : \path{onboarding-technique.md} (dat\'e, d\'ecrit un \'etat ant\'erieur \`a D.5, voir \S\ref{sec:ecarts}), \path{dependances-partagees.md}, \path{etat_technique_20260826.md} (document pr\'ec\'edent, trait\'e comme piste \`a recontr\^oler, pas comme source de v\'erit\'e), \path{references/convention_collective_syntec.pdf} + \path{README.md} d'avertissement (annexes I/II absentes).
+\item \path{docs/kpi/}, \path{docs/poc-report/}, \path{docs/risques/} : vides (\path{.gitkeep}).
+\item \path{config/logging/}, \path{config/settings/}, \path{config/traefik/} : vides (\path{.gitkeep}).
+\item \path{llm/README.md} : documentation Ollama (mod\`eles, endpoint) --- pas de code, pas de v\'erification d'ex\'ecution possible ici (pas de GPU local).
+\item \path{llm/modelfiles/} : vide.
+\item \path{vector_db/qdrant-config/} : vide.
+\item \path{frontend/public/}, \path{frontend/src/} : vides --- aucune ligne de frontend.
+\item \path{.claude/settings.local.json} : configuration d'outillage, hors p\'erim\`etre applicatif.
+\end{itemize}
+
+% =====================================================================
+\section{\'Etat par composant}
+% =====================================================================
+
+Convention utilis\'ee dans cette section : \textbf{Impl\'ement\'e} = le code existe et a \'et\'e lu ; \textbf{Test\'e} = une suite pytest l'ex\'ecute r\'eellement et passe ; \textbf{Expos\'e en API} = une route HTTP existe et r\'epond, v\'erifi\'e par appel r\'eel.
+
+\subsection{Suite de tests globale (depuis la racine)}
+\label{sec:tests-global}
+
+\begin{lstlisting}
+$ DATABASE_URL="postgresql+psycopg2://exeiguard:faroukxabdou@localhost:5432/exeiguard_poc" \
+  python -m pytest -v
+...
+======================= 59 passed, 2 warnings in 4.38s ========================
+\end{lstlisting}
+
+Note de reproductibilit\'e : sans \path{DATABASE_URL} export\'ee vers un PostgreSQL joignable, la collecte \'echoue enti\`erement (\path{orchestrateur/tests/test_e2e_a1_a6.py} ex\'ecute \path{init_db()} au chargement du module) :
+\begin{lstlisting}
+$ python -m pytest -v
+...
+E   sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) connection to
+    server at "localhost" (::1), port 5432 failed: Connection refused
+!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+\end{lstlisting}
+Un PostgreSQL r\'eel (conteneur \path{postgres:16}, healthy) a \'et\'e d\'emarr\'e via Docker dans cette session pour lever ce blocage (voir \S\ref{sec:dette}).
+
+D\'ecompte confirm\'e composant par composant en relan\c{c}ant pytest s\'epar\'ement sur chaque dossier (r\'esultats authentiques, pas une somme suppos\'ee) :
+\begin{lstlisting}
+shared/tests/          : 11 passed in 0.20s
+db/test_insertion.py   : 1 passed in 0.73s
+extracteur-evp/tests/  : 16 passed in 1.49s
+orchestrateur/tests/   : 3 passed, 2 warnings in 1.35s
+compliance-validation/tests/ : 28 passed in 0.23s
+rag/tests/             : collected 0 items -- no tests ran in 0.02s
+integration-sage/tests/: collected 0 items -- no tests ran in 0.02s
+                          -----
+                          11+1+16+3+28 = 59 (identique au total global)
+\end{lstlisting}
+
+\subsection{\path{shared/} --- contrat de donn\'ees}
+\etat{Impl\'ement\'e}{\ok} --- 5 mod\`eles Pydantic lus int\'egralement (\path{evp.py}, \path{contrat.py}, \path{bulletin.py}, \path{dossier.py}, \path{rupture.py}), avec validateurs de coh\'erence m\'etier r\'eels (ex. tol\'erance de 2\,\texteuro\ entre r\'emun\'eration annuelle/12 et mensuelle, justifi\'ee en commentaire par un \'ecart r\'eel de 1,33\,\texteuro\ observ\'e sur un contrat r\'eel).\\
+\etat{Test\'e}{\ok} --- 11/11 passed (ci-dessus).\\
+\etat{Expos\'e en API}{n/a} --- biblioth\`eque partag\'ee, pas un service.
+
+\subsection{\path{db/} --- socle PostgreSQL}
+\etat{Impl\'ement\'e}{\ok} --- 5 tables SQLAlchemy (\path{Dossier}, \path{EVPEnregistrement}, \path{Controle}, \path{Decision}, \path{AuditLog}), 1 migration Alembic.\\
+\etat{Test\'e}{\ok} --- \path{db/test_insertion.py::test_insertion} PASSED contre un PostgreSQL r\'eel (conteneur \path{postgres:16}, utilisateur/mot de passe r\'eels du conteneur, pas ceux du \path{.env.example}, voir \S\ref{sec:dette}).\\
+\etat{Expos\'e en API}{n/a} --- consomm\'e directement par l'orchestrateur, pas de route propre.
+
+\subsection{\path{orchestrateur/} --- machine \`a \'etats A1\textrightarrow A6}
+\label{sec:orchestrateur}
+\etat{Impl\'ement\'e}{\ok} --- \path{state_machine.py} : 11 \'etats, 14 transitions nomm\'ees. \path{main.py} journalise chaque transition (r\'eussie ou refus\'ee) dans \path{audit_log}.\\
+\etat{Test\'e}{\ok} --- 3/3 passed via \path{TestClient} (appels HTTP r\'eels sur l'app FastAPI, pas des appels Python directs).\\
+\etat{Expos\'e en API}{\ok} --- v\'erifi\'e par appel r\'eel dans cette session, contre un conteneur \textbf{reconstruit \`a partir du code actuel} (voir \S\ref{sec:dette} pour la raison de cette reconstruction).
+
+\begin{lstlisting}
+$ curl -s http://localhost:8010/openapi.json | python -c \
+  "import json,sys; print(list(json.load(sys.stdin)['paths'].keys()))"
+['/health', '/dossiers', '/dossiers/{dossier_id}/etat', '/dossiers/{dossier_id}/transition']
+
+$ curl -s -X POST http://localhost:8010/dossiers -H "Content-Type: application/json" -d @payload.json
+{"id":"b3b7bda5-98cd-42da-87ef-2a18c5e2ee43","matricule":"0004","prenom":"Didier","etat":"A1",
+ "triggers_disponibles":["extraire_evp"]}
+
+$ curl -s -X POST http://localhost:8010/dossiers/b3b7bda5.../transition -d '{"action":"extraire_evp","acteur":"demo"}'
+{"etat_precedent":"A1","etat":"A2", ...}
+   ... (idem pour valider_transmission, calcul_termine, valider_bulletin, autoriser_paiement, cloturer) ...
+
+$ curl -s http://localhost:8010/dossiers/b3b7bda5.../etat
+{"id":"b3b7bda5-...","matricule":"0004","prenom":"Didier","etat":"TERMINE","triggers_disponibles":[]}
+
+$ docker exec exeiguard-postgres psql -U exeiguard -d exeiguard_poc -c \
+  "SELECT action, resultat FROM audit_log WHERE dossier_id='b3b7bda5-...' ORDER BY horodatage;"
+           action            | resultat
+-----------------------------+----------
+ creation_dossier            | succes
+ transition_etat:A1->A2      | succes
+ transition_etat:A2->A3      | succes
+ transition_etat:A3->A4      | succes
+ transition_etat:A4->A5      | succes
+ transition_etat:A5->A6      | succes
+ transition_etat:A6->TERMINE | succes
+(7 rows)
+\end{lstlisting}
+
+Point important pour l'interpr\'etation de ce r\'esultat : ce parcours prouve que la \emph{machine \`a \'etats} fonctionne bout en bout (transitions, garde-fous, audit). Il ne prouve \textbf{pas} que le pipeline m\'etier r\'eel fonctionne bout en bout : aucune des transitions ci-dessus n'appelle r\'eellement \path{extracteur-evp}, \path{compliance-validation}, un mock Sage ou \path{rag} --- ces services n'ont, \`a ce jour, aucun appel HTTP sortant/entrant entre eux (confirm\'e par absence de tout client HTTP inter-services dans le code de \path{orchestrateur/app/}).
+
+\subsection{\path{extracteur-evp/} --- extraction EVP}
+\label{sec:extracteur-evp}
+\etat{Impl\'ement\'e}{\ok} --- \path{excel_parser.py} (314 lignes) : d\'etection dynamique des blocs d'absence par libell\'e d'en-t\^ete (pas par position de colonne fixe), normalisation des dates, gestion des anomalies r\'eelles observ\'ees (matricule EVP non fiable, coquille orthographique ``ABSCENCES''). \path{confidence_scoring.py} : score 0--1 avec p\'enalit\'es explicites.\\
+\etat{Test\'e}{\ok} --- 16/16 passed, dont 3 tests de g\'en\'eralisation (ordre des blocs invers\'e, colonne suppl\'ementaire ins\'er\'ee, bloc manquant).\\
+\etat{Expos\'e en API}{\ko} --- v\'erifi\'e par appel r\'eel sur un conteneur reconstruit \`a partir du code actuel :
+\begin{lstlisting}
+$ curl -s http://localhost:8011/openapi.json | python -c \
+  "import json,sys; print(list(json.load(sys.stdin)['paths'].keys()))"
+['/health']
+\end{lstlisting}
+Le code source de \path{app/main.py} confirme : \path{GET /health} est la seule route d\'eclar\'ee, \path{excel_parser.py} et \path{confidence_scoring.py} ne sont import\'es nulle part dans \path{main.py}.
+
+\subsection{\path{compliance-validation/} --- Rule Engine}
+\label{sec:compliance}
+\etat{Impl\'ement\'e}{\ok} --- 10 r\`egles r\'eelles (\path{rg01} \`a \path{rg10}), chacune avec une constante \path{SOURCE} pr\'ecise, extraite directement du code :
+\begin{lstlisting}
+RG-01: Code du travail, art. L3121-27 (duree legale : 35h/semaine)
+RG-02: Article 7.1 CCN SYNTEC (IDCC 1486) + Code du travail, art. L3242-1
+RG-03: Article 7.2 de la CCN SYNTEC (IDCC 1486), renvoi aux annexes I et II
+RG-04: Article 3.4 de la CCN SYNTEC (IDCC 1486)
+RG-05: (jurisprudence Cass. soc. + accord d'entreprise Soft IT)
+RG-06: Article 4.2 de la CCN SYNTEC (IDCC 1486)
+RG-07: Article 5.1, point 2 de la CCN SYNTEC (IDCC 1486)
+RG-08: Accord d'entreprise Soft IT
+RG-09: Article 9.1 CCN SYNTEC (maladie/accident) + accord d'entreprise Soft IT
+RG-10: Code du travail, art. L1221-2 + Article 7.4 CCN SYNTEC
+\end{lstlisting}
+\etat{Test\'e}{\ok} --- 28/28 passed, contre les 29 fixtures r\'eelles/synth\'etiques.\\
+\etat{Expos\'e en API}{\ko} --- v\'erifi\'e par appel r\'eel :
+\begin{lstlisting}
+$ curl -s http://localhost:8012/openapi.json | python -c \
+  "import json,sys; print(list(json.load(sys.stdin)['paths'].keys()))"
+['/health']
+\end{lstlisting}
+\path{app/main.py} ne contient que \path{GET /health} ; \path{evaluer_toutes_les_regles()} n'est appel\'ee que depuis les tests.
+
+Point de vigilance not\'e en lisant \path{rg03_classification.py} : \path{GRILLE_SYNTEC_ETAM} ne contient que 2 positions v\'erifi\'ees (1.1, 1.2) sur une grille qui devrait en couvrir bien davantage (les annexes I/II de la CCN, seules \`a contenir la grille compl\`ete, sont absentes du PDF source --- document\'e dans le code lui-m\^eme). Pour toute position ETAM hors de ces 2 entr\'ees, RG-03 se rabat sur une simple v\'erification de bornes globales (240--500) plut\^ot qu'une correspondance position/coefficient exacte.
+
+\subsection{\path{integration-sage/} --- int\'egration Sage}
+\label{sec:sage}
+\etat{Impl\'ement\'e}{\ko} --- \path{app/main.py} ne contient que \path{GET /health}. \path{mock/} est vide.\\
+\etat{Test\'e}{\ko} :
+\begin{lstlisting}
+$ python -m pytest integration-sage/tests/ -v
+collecting ... collected 0 items
+============================ no tests ran in 0.02s ============================
+\end{lstlisting}
+\etat{Expos\'e en API}{\ko} --- confirm\'e :
+\begin{lstlisting}
+$ curl -s http://localhost:8013/openapi.json | python -c \
+  "import json,sys; print(list(json.load(sys.stdin)['paths'].keys()))"
+['/health']
+\end{lstlisting}
+
+\subsection{\path{rag/} --- recherche s\'emantique CCN SYNTEC}
+\label{sec:rag}
+\etat{Impl\'ement\'e}{\ok} --- \path{app/main.py} impl\'emente r\'eellement \path{POST /rag/query} (recherche Qdrant top-3 + synth\`ese Ollama optionnelle via \path{?synthese=true}), \path{app/ingestion/chunking.py} d\'ecoupe le PDF par article via une regex v\'erifi\'ee, \path{app/embeddings.py} appelle l'API Ollama.\\
+\etat{Test\'e}{\ko} :
+\begin{lstlisting}
+$ python -m pytest rag/tests/ -v
+collecting ... collected 0 items
+============================ no tests ran in 0.02s ============================
+\end{lstlisting}
+Aucun test automatis\'e n'existe pour ce service, confirm\'e (le dossier \path{rag/tests/} ne contient qu'un \path{__init__.py}).\\
+\etat{Expos\'e en API}{\partiel --- non v\'erifiable dans cette session} --- le code de la route existe et est coh\'erent, mais son ex\'ecution r\'eelle n'a pas pu \^etre test\'ee ici :
+\begin{lstlisting}
+$ curl -s -w " [%{http_code}]\n" http://localhost:6333/collections
+ [000]
+$ curl -s -w " [%{http_code}]\n" http://localhost:11434/api/tags
+ [000]
+\end{lstlisting}
+Qdrant et Ollama ne sont pas disponibles sur cette machine locale (ni conteneuris\'es ni install\'es) ; les faire tourner aurait exig\'e de t\'el\'echarger l'image \path{ollama/ollama} et au moins un mod\`ele d'embedding de plusieurs Go, jug\'e disproportionn\'e pour cette v\'erification. \textbf{Ce point n'a donc pas pu \^etre v\'erifi\'e dans cette session} ; un document pr\'ec\'edent du d\'ep\^ot (\path{etat_technique_20260826.md}) d\'ecrit des r\'esultats de recherche obtenus sur la VM cible, mais conform\'ement \`a la consigne de cette v\'erification, ce document est trait\'e comme une piste \`a recontr\^oler et non recopi\'e ici comme un fait \'etabli.
+
+\subsection{D\'ependances transverses (\path{shared/}, \path{db/})}
+\label{sec:dependances}
+V\'erifi\'e en relisant les 4 Dockerfiles applicatifs (\path{orchestrateur}, \path{extracteur-evp}, \path{compliance-validation}, \path{integration-sage}) : les 4 copient bien \path{shared/} \`a c\^ot\'e de \path{app/} et d\'efinissent \path{ENV PYTHONPATH=/app/shared}. Seul \path{orchestrateur/Dockerfile} copie \path{db/} en plus (seul service \`a en avoir besoin \`a ce jour). Confirm\'e \'egalement par la reconstruction r\'eelle des 4 images dans cette session (\path{docker compose -f docker-compose.dev.yml build}), qui a r\'eussi sans erreur d'import manquant. Le bug historique du commit \path{0af3508} (\path{shared/} non copi\'e) n'est donc \textbf{pas} r\'eapparu.
+
+% =====================================================================
+\section{\'Ecarts entre documentation existante et code r\'eel}
+\label{sec:ecarts}
+% =====================================================================
+
+\begin{itemize}[leftmargin=1.3em]
+\item \textbf{\path{README.md}} affirme uniquement ``squelette initial du d\'ep\^ot'' --- n'a pas \'et\'e mis \`a jour depuis le commit initial \path{1978521}, alors que le d\'ep\^ot contient aujourd'hui 59 tests r\'eels, un pipeline orchestr\'e fonctionnel et un Rule Engine complet. \'Ecart maximal entre doc et code sur tout le d\'ep\^ot.
+\item \textbf{\path{docs/architecture/onboarding-technique.md}} d\'ecrit \path{compliance-validation/app/rule_engine/} comme ``un dossier vide \`a ce jour'' et l'orchestrateur comme n'ayant ``aucune transition d'\'etat impl\'ement\'ee'' --- exact au moment de sa r\'edaction (avant D.3/D.5), mais p\'erim\'e aujourd'hui : les deux sont maintenant impl\'ement\'es et test\'es (\S\ref{sec:orchestrateur}, \S\ref{sec:compliance}). Le document s'auto-qualifie de ``partiellement dat\'e'' en introduction, ce qui est confirm\'e ici.
+\item \textbf{\path{docker-compose.dev.yml}} (commentaire d'en-t\^ete) affirme encore : ``la logique m\'etier des services extracteur-evp / compliance-validation / integration-sage n'est pas encore impl\'ement\'ee [...] ils exposent uniquement \path{GET /health}''. Faux pour \path{extracteur-evp} et \path{compliance-validation} au sens ``impl\'ement\'e'' (le code existe et est test\'e), mais exact au sens ``expos\'e en API'' (confirm\'e \S\ref{sec:extracteur-evp}, \S\ref{sec:compliance}) --- le commentaire mélange les deux niveaux, source probable de confusion.
+\item \textbf{En-t\^ete GPU} : \path{docker-compose.yml} mentionne ``GPU NVIDIA L4 24\,Go'', \path{docs/architecture/etat_technique_20260826.md} mentionne ``GPU NVIDIA A10'' pour la m\^eme VM cible --- incoh\'erence interne au d\'ep\^ot, non tranch\'ee ici faute d'acc\`es \`a l'infrastructure r\'eelle (\S\ref{sec:infra}).
+\item \textbf{\path{.env.example}} documente \path{POSTGRES_PASSWORD=exeiguard_paie} comme valeur de d\'eveloppement ; le conteneur PostgreSQL r\'eellement en cours d'ex\'ecution sur cette machine au d\'ebut de cette session utilisait un mot de passe diff\'erent (\path{faroukxabdou}), confirm\'e via \path{docker inspect}. \'Ecart entre configuration document\'ee et configuration r\'eellement d\'eploy\'ee localement (\S\ref{sec:dette}).
+\end{itemize}
+
+% =====================================================================
+\section{Ce qui manque concr\`etement}
+% =====================================================================
+
+\begin{itemize}[leftmargin=1.3em]
+\item \textbf{Aucun appel inter-services} : l'orchestrateur ne fait aucun appel HTTP sortant vers \path{extracteur-evp}, \path{compliance-validation}, \path{integration-sage} ou \path{rag} --- confirm\'e par absence de tout client HTTP (\path{httpx}, \path{requests}) dans \path{orchestrateur/app/}. Chaque transition d'\'etat est un simple changement de statut en base.
+\item \path{extracteur-evp/app/main.py} : \path{excel_parser.py} et \path{confidence_scoring.py} existent et sont test\'es mais \textbf{aucune route API} ne les expose (pas de \path{POST /extraire} ou \'equivalent).
+\item \path{compliance-validation/app/main.py} : \path{evaluer_toutes_les_regles()} existe et est test\'ee mais \textbf{aucune route API} ne l'expose. Le RAG r\'eglementaire (deuxi\`eme moiti\'e du r\^ole cible de ce service, \`a c\^ot\'e du Rule Engine) n'y est pas int\'egr\'e non plus : le service \path{rag/} est totalement s\'epar\'e et ind\'ependant.
+\item \path{integration-sage/mock/} : vide --- aucun mock de l'API Sage n'existe, m\^eme minimal.
+\item \path{extracteur-evp/app/ocr/} : vide --- aucun parsing PDF/OCR (contrats, bulletins) n'est impl\'ement\'e ; seul l'EVP Excel est parsable.
+\item \textbf{Aucun test automatis\'e} pour \path{rag/} (0 test collect\'e) ni pour \path{integration-sage/} (0 test collect\'e, coh\'erent avec l'absence de code).
+\item \path{tests/integration/} et \path{tests/e2e/} : vides --- aucun test v\'erifiant le pipeline inter-services (coh\'erent avec l'absence d'appels inter-services ci-dessus).
+\item \path{rag/Dockerfile} : placeholder sans contenu --- ce service ne peut pas \^etre construit en image Docker en l'\'etat ; il ne tourne qu'en \path{python -m uvicorn} directement sur un h\^ote disposant d'un acc\`es r\'eseau \`a Qdrant/Ollama.
+\item \path{frontend/} : totalement vide (\path{public/}, \path{src/}) --- aucune interface utilisateur, m\^eme embryonnaire.
+\item \path{config/logging/}, \path{config/settings/}, \path{config/traefik/} : vides --- pas de configuration de logging centralis\'e ni de reverse proxy (Traefik pr\'evu pour la Phase 9, non commenc\'e).
+\item \path{llm/modelfiles/} et \path{vector_db/qdrant-config/} : vides --- configuration par d\'efaut uniquement, aucune personnalisation.
+\item \path{shared/reference_data/grilles_syntec.py} : \path{GRILLE_SYNTEC_ETAM} tr\`es incompl\`ete (2 positions sur une grille qui devrait en couvrir bien davantage), faute d'acc\`es aux annexes I/II de la CCN SYNTEC.
+\end{itemize}
+
+% =====================================================================
+\section{Points de vigilance et dette technique d\'ecouverts pendant cette v\'erification}
+\label{sec:dette}
+% =====================================================================
+
+\begin{itemize}[leftmargin=1.3em]
+
+\item \textbf{Conteneurs Docker locaux p\'erim\'es (d\'ecouverte de cette session).} Au d\'ebut de cette v\'erification, trois conteneurs autonomes (\path{exeiguard-orchestrateur}, \path{exeiguard-extracteur-evp}, \path{exeiguard-postgres}) tournaient d\'ej\`a sur cette machine, construits depuis des images datant respectivement du 7 et du 10 ao\^ut 2026 --- soit avant l'impl\'ementation r\'eelle de la machine \`a \'etats (commit \path{791747c}, 25 ao\^ut). Un appel r\'eel \`a \path{POST /dossiers} contre ce conteneur a retourn\'e \path{404 Not Found}, et \path{/openapi.json} ne listait que \path{['/health', '/db-check']}. Ces conteneurs ont \'et\'e arr\^et\'es et les 4 images applicatives reconstruites (\path{docker compose -f docker-compose.dev.yml build}) pour que les v\'erifications de ce rapport portent sur le code actuel. Cela signifie qu'un simple \path{docker compose up} sans \path{--build} sur cette machine aurait servi, silencieusement, une version du service vieille de trois semaines.
+\item \textbf{Identifiants PostgreSQL divergents.} Le mot de passe PostgreSQL r\'eellement configur\'e sur le conteneur local (\path{faroukxabdou}) ne correspond ni \`a la valeur document\'ee dans \path{.env.example} (\path{exeiguard_paie}) ni au d\'efaut cod\'e en dur dans \path{db/database.py} (\path{changeme_local}). Aucun fichier \path{.env} n'existe sur cette machine ; la valeur r\'eelle vient donc d'une variable d'environnement pass\'ee manuellement lors d'un lancement pr\'ec\'edent, non trac\'ee dans le d\'ep\^ot. Source de friction probable pour quiconque relance la stack sans conna\^itre cette valeur.
+\item \textbf{Collecte pytest fragile sans \path{DATABASE_URL}.} Confirm\'e dans cette session : lancer \path{python -m pytest} depuis la racine sans variable \path{DATABASE_URL} point\'ee vers un PostgreSQL joignable fait \'echouer la \textbf{collecte compl\`ete} (pas seulement les tests orchestrateur), car \path{orchestrateur/tests/test_e2e_a1_a6.py} appelle \path{init_db()} au niveau module, donc au chargement, avant m\^eme l'ex\'ecution d'un test.
+\item \textbf{\path{GRILLE_SYNTEC_ETAM} tr\`es incompl\`ete} (2 entr\'ees) : RG-03 se rabat silencieusement sur une v\'erification de bornes globales (240-500) pour toute position ETAM non couverte, ce qui est \emph{moins pr\'ecis} qu'une v\'erification position/coefficient exacte --- comportement document\'e et volontaire dans le code, mais \`a garder en t\^ete pour ne pas sur-interpr\'eter un r\'esultat ``CONFORME'' de RG-03 sur un profil ETAM comme une v\'erification compl\`ete.
+\item \textbf{\path{@app.on_event("startup")} d\'epr\'eci\'e.} \path{orchestrateur/app/main.py} utilise l'API FastAPI \path{on_event}, marqu\'ee \path{DeprecationWarning} par la version de FastAPI install\'ee dans cette session (au profit des \path{lifespan} handlers). Fonctionnel aujourd'hui, mais \`a migrer avant qu'une future version de FastAPI ne la retire.
+\item \textbf{R\'eponse \path{/health} incoh\'erente entre services.} \path{orchestrateur} retourne \path{\{"status": "ok"\}} (sans champ \path{service}), les 3 autres services retournent \path{\{"status": "ok", "service": "<nom>"\}} --- incoh\'erence mineure mais qui rend le monitoring g\'en\'erique (un seul contr\^ole pour les 4 services) l\'eg\`erement plus complexe qu'il ne devrait l'\^etre.
+\item \textbf{Rag non testable hors VM cible.} \path{rag/config.py} documente explicitement que \path{OLLAMA_HOST}/\path{QDRANT_HOST} doivent \^etre surcharg\'es en \path{localhost} pour tourner hors du r\'eseau \path{docker-compose} --- coh\'erent avec l'absence de Dockerfile r\'eel pour ce service, mais cela signifie que ce service ne peut, \`a ce jour, \^etre v\'erifi\'e que depuis la VM cible elle-m\^eme, jamais depuis un environnement de d\'eveloppement local standard.
+\end{itemize}
+
+% =====================================================================
+\section{Prochaines \'etapes sugg\'er\'ees}
+% =====================================================================
+
+Priorisation fond\'ee sur ce qui bloque le plus l'avancement d'un pipeline A1\textrightarrow A6 \emph{r\'eellement} bout en bout (et pas seulement au sens machine \`a \'etats) :
+
+\begin{enumerate}[leftmargin=1.5em]
+\item \textbf{Brancher \path{extracteur-evp} et \path{compliance-validation} sur une route API.} Les deux ont d\'ej\`a un code m\'etier complet et test\'e (16 + 28 tests) : c'est le rapport effort/valeur le plus favorable de tout le d\'ep\^ot. Sans cette \'etape, aucun appel inter-services n'est possible, quel que soit l'avancement de l'orchestrateur.
+\item \textbf{Faire appeler r\'eellement ces routes par l'orchestrateur} lors des transitions correspondantes (\path{extraire_evp} $\to$ appel HTTP \`a \path{extracteur-evp}, etc.), pour que le pipeline A1\textrightarrow A6 traite un dossier r\'eel et pas seulement un changement de statut.
+\item \textbf{\'Ecrire un mock minimal pour \path{integration-sage}} (m\^eme un calcul factice d\'eterministe) : c'est aujourd'hui le seul maillon du pipeline sans aucune logique, et A3 (calcul) en d\'epend directement.
+\item \textbf{Ajouter des tests automatis\'es pour \path{rag/}} (au moins des tests unitaires sur \path{chunking.py}, qui ne d\'ependent pas de Qdrant/Ollama), pour sortir ce service de la situation ``0 test'' actuelle avant qu'il ne grossisse davantage.
+\item \textbf{Fixer un Dockerfile r\'eel pour \path{rag/}} et le brancher sur \path{docker-compose.dev.yml}, pour que ce service soit v\'erifiable en local et pas seulement sur la VM cible.
+\item \textbf{Mettre \`a jour \path{README.md}} avec un \'etat r\'eel minimal (m\^eme un lien vers ce document), pour qu'un nouvel arrivant n'ait pas \`a d\'eduire l'\'etat du projet du seul historique Git.
+\item \textbf{Documenter la proc\'edure de d\'emarrage local} (valeurs \path{DATABASE_URL} r\'eelles, n\'ecessit\'e de \path{--build} pour \'eviter de servir une image p\'erim\'ee) pour \'eviter la r\'ep\'etition du probl\`eme d\'ecouvert en \S\ref{sec:dette}.
+\end{enumerate}
+
+\end{document}
