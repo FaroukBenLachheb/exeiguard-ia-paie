@@ -2,11 +2,11 @@
 #
 # Sert a valider que chaque service se construit et demarre correctement
 # en local, en preparation de l'integration sur la VM GPU (pas de GPU en
-# local : la logique LLM/RAG n'est pas branchee ici). La logique metier
-# des services extracteur-evp / compliance-validation / integration-sage
-# n'est pas encore implementee (phases D.4+) : ils exposent uniquement
-# GET /health pour l'instant, ce qui permet a toute la stack de demarrer
-# sans erreur des maintenant.
+# local : la reservation GPU de llm-server reste commentee ci-dessous).
+# La logique metier des services extracteur-evp / compliance-validation /
+# integration-sage n'est pas encore implementee (phases D.4+) : ils
+# exposent uniquement GET /health pour l'instant, ce qui permet a toute
+# la stack de demarrer sans erreur des maintenant.
 
 services:
   postgres:
@@ -110,6 +110,41 @@ services:
     #           capabilities: [gpu]
     #           count: 1
 
+  qdrant:
+    image: qdrant/qdrant:latest
+    volumes:
+      - qdrant_data:/qdrant/storage
+    ports:
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
+    expose:
+      - "6333"
+      - "6334"
+    # Base vectorielle du RAG (rag/app/ingestion/ingest.py,
+    # rag/app/main.py), meme config que docker-compose.yml (VM cible).
+
+  rag:
+    build:
+      context: .
+      dockerfile: rag/Dockerfile
+    environment:
+      OLLAMA_HOST: llm-server
+      QDRANT_HOST: qdrant
+    expose:
+      - "8000"
+    volumes:
+      - ./docs/architecture/references:/docs/architecture/references:ro
+    depends_on:
+      - qdrant
+      - llm-server
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
 volumes:
   postgres_data:
   ollama_models:
+  qdrant_data:

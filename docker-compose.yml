@@ -5,19 +5,23 @@
 # compliance-validation, integration-sage, postgres, ...) seront ajoutes
 # ici phase par phase, sur le meme modele que docker-compose.dev.yml.
 #
-# Seul le service llm-server est deja defini : contrairement au dev local
-# (docker-compose.dev.yml, ou la reservation GPU reste commentee faute de
-# GPU/NVIDIA Container Toolkit en local), elle est active ici car cette VM
-# est la cible reelle et dispose du toolkit installe.
+# llm-server est le seul service avec reservation GPU active : contrairement
+# au dev local (docker-compose.dev.yml, ou la reservation GPU reste
+# commentee faute de GPU/NVIDIA Container Toolkit en local), elle est
+# active ici car cette VM est la cible reelle et dispose du toolkit
+# installe.
 #
 # llm-server et qdrant publient leur port sur 127.0.0.1 (host) en plus du
-# reseau interne docker-compose : le service rag/ (sprint D.6 partiel)
-# n'a pas encore de Dockerfile et tourne directement via python sur
-# l'hote de la VM (cf. rag/app/config.py) - il ne peut donc pas resoudre
-# les noms DNS internes au reseau compose (llm-server, qdrant) et doit
-# les joindre via localhost. Binder sur 127.0.0.1 (pas 0.0.0.0) preserve
-# l'absence d'exposition publique : seul un processus local a la VM peut
-# s'y connecter, le firewall/l'exterieur n'y a toujours pas acces.
+# reseau interne docker-compose. Historiquement (sprint D.6 partiel) ce
+# mapping etait necessaire car rag/ n'avait pas encore de Dockerfile et
+# tournait directement via python sur l'hote de la VM (cf. git history) :
+# ce n'est plus le cas depuis la conteneurisation de rag/ (service "rag"
+# ci-dessous, qui rejoint llm-server/qdrant via le reseau interne compose,
+# noms DNS "llm-server"/"qdrant"), mais le mapping 127.0.0.1 reste utile
+# pour le diagnostic manuel depuis l'hote (ex. curl / ingestion manuelle
+# hors conteneur). Binder sur 127.0.0.1 (pas 0.0.0.0) preserve l'absence
+# d'exposition publique : seul un processus local a la VM peut s'y
+# connecter, le firewall/l'exterieur n'y a toujours pas acces.
 
 services:
   llm-server:
@@ -53,6 +57,36 @@ services:
     # Base vectorielle du RAG (rag/app/ingestion/ingest.py,
     # rag/app/main.py). Port publie sur 127.0.0.1 uniquement, meme
     # raison que llm-server ci-dessus.
+
+  rag:
+    build:
+      context: .
+      dockerfile: rag/Dockerfile
+    environment:
+      OLLAMA_HOST: llm-server
+      QDRANT_HOST: qdrant
+    expose:
+      - "8000"
+    volumes:
+      - ./docs/architecture/references:/docs/architecture/references:ro
+    # Corpus CCN SYNTEC monte en lecture seule (voir rag/Dockerfile) : le
+    # PDF source (docs/architecture/references/convention_collective_
+    # syntec.pdf) n'est utilise qu'a l'ingestion manuelle
+    # (rag/app/ingestion/ingest.py), jamais au demarrage du conteneur, et
+    # n'a donc pas besoin d'etre fige dans l'image.
+    depends_on:
+      - qdrant
+      - llm-server
+    # Pas de "condition: service_healthy" : ni llm-server ni qdrant n'ont
+    # de HEALTHCHECK defini ici (dependance simple, demarrage best-effort
+    # - le endpoint /rag/query echouera proprement si l'un des deux n'est
+    # pas encore pret, cf. rag/app/main.py).
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
 volumes:
   ollama_models:
