@@ -19,6 +19,8 @@ services:
       - "5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - exeiguard_net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-exeiguard} -d ${POSTGRES_DB:-exeiguard_poc}"]
       interval: 5s
@@ -37,6 +39,8 @@ services:
     # a retirer avant toute mise en situation reelle. En Phase 9 (Traefik),
     # seul le port 443 sera expose publiquement et orchestrateur repassera
     # en "expose" comme les autres services internes.
+    networks:
+      - exeiguard_net
     depends_on:
       postgres:
         condition: service_healthy
@@ -53,6 +57,8 @@ services:
       dockerfile: extracteur-evp/Dockerfile
     expose:
       - "8000"
+    networks:
+      - exeiguard_net
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
       interval: 10s
@@ -66,6 +72,8 @@ services:
       dockerfile: compliance-validation/Dockerfile
     expose:
       - "8000"
+    networks:
+      - exeiguard_net
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
       interval: 10s
@@ -79,6 +87,8 @@ services:
       dockerfile: integration-sage/Dockerfile
     expose:
       - "8000"
+    networks:
+      - exeiguard_net
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
       interval: 10s
@@ -96,6 +106,14 @@ services:
     # seuls les autres conteneurs du reseau docker-compose y accedent
     # (endpoint compatible OpenAI sur http://llm-server:11434/v1, voir
     # llm/README.md).
+    networks:
+      - exeiguard_net
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     #
     # Reservation GPU : actif uniquement sur la VM GPU cible (OVH, NVIDIA
     # L4 24 Go) avec le NVIDIA Container Toolkit installe sur l'hote. Reste
@@ -120,8 +138,20 @@ services:
     expose:
       - "6333"
       - "6334"
+    networks:
+      - exeiguard_net
     # Base vectorielle du RAG (rag/app/ingestion/ingest.py,
     # rag/app/main.py), meme config que docker-compose.yml (VM cible).
+    #
+    # Healthcheck TCP via bash (image qdrant sans curl/wget) : necessaire
+    # pour que le "condition: service_healthy" de rag ci-dessous soit une
+    # config Compose valide. NON TESTE - a verifier reellement sur la VM.
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   rag:
     build:
@@ -134,15 +164,23 @@ services:
       - "8000"
     volumes:
       - ./docs/architecture/references:/docs/architecture/references:ro
+    networks:
+      - exeiguard_net
     depends_on:
-      - qdrant
-      - llm-server
+      qdrant:
+        condition: service_healthy
+      llm-server:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
       interval: 10s
       timeout: 3s
       retries: 5
       start_period: 5s
+
+networks:
+  exeiguard_net:
+    driver: bridge
 
 volumes:
   postgres_data:

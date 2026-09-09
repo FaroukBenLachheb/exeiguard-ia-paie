@@ -11,31 +11,43 @@
 # active ici car cette VM est la cible reelle et dispose du toolkit
 # installe.
 #
-# llm-server et qdrant publient leur port sur 127.0.0.1 (host) en plus du
-# reseau interne docker-compose. Historiquement (sprint D.6 partiel) ce
-# mapping etait necessaire car rag/ n'avait pas encore de Dockerfile et
-# tournait directement via python sur l'hote de la VM (cf. git history) :
-# ce n'est plus le cas depuis la conteneurisation de rag/ (service "rag"
-# ci-dessous, qui rejoint llm-server/qdrant via le reseau interne compose,
-# noms DNS "llm-server"/"qdrant"), mais le mapping 127.0.0.1 reste utile
-# pour le diagnostic manuel depuis l'hote (ex. curl / ingestion manuelle
-# hors conteneur). Binder sur 127.0.0.1 (pas 0.0.0.0) preserve l'absence
-# d'exposition publique : seul un processus local a la VM peut s'y
-# connecter, le firewall/l'exterieur n'y a toujours pas acces.
+# qdrant publie son port sur 127.0.0.1 (host) en plus du reseau interne
+# docker-compose, utile pour le diagnostic manuel depuis l'hote (ex. curl
+# / ingestion manuelle hors conteneur). Binder sur 127.0.0.1 (pas 0.0.0.0)
+# preserve l'absence d'exposition publique : seul un processus local a la
+# VM peut s'y connecter, le firewall/l'exterieur n'y a toujours pas acces.
+#
+# llm-server N'est PAS publie sur l'hote (expose: uniquement) : seul le
+# conteneur rag y accede, via le reseau Docker interne explicite
+# "exeiguard_net" (nom DNS "llm-server"). Ceci evite tout conflit avec un
+# Ollama natif eventuellement installe directement sur l'hote de la VM
+# (cf. incident : "address already in use" sur 127.0.0.1:11434 lors d'un
+# essai de bind host+conteneur simultanes).
+#
+# Reseau explicite "exeiguard_net" (declare en bas de fichier) attache a
+# tous les services : elimine toute ambiguite de resolution DNS entre
+# conteneurs (plus de dependance au reseau par defaut implicite de
+# Compose, dont le nom/l'existant peut varier selon comment/d'ou la stack
+# est demarree).
 
 services:
   llm-server:
     image: ollama/ollama:latest
     volumes:
       - ollama_models:/root/.ollama
-    ports:
-      - "127.0.0.1:11434:11434"
     expose:
       - "11434"
-    # Cf. commentaire en tete de fichier : port publie sur 127.0.0.1
-    # uniquement (pas de mapping public), pour l'usage host-level de
-    # rag/. Reste aussi accessible depuis les autres conteneurs du reseau
-    # docker-compose via http://llm-server:11434/v1 (voir llm/README.md).
+    # Accessible depuis les autres conteneurs du reseau docker-compose via
+    # http://llm-server:11434/v1 (voir llm/README.md). Pas de "ports:" ici
+    # (voir commentaire en tete de fichier).
+    networks:
+      - exeiguard_net
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     deploy:
       resources:
         reservations:
@@ -54,9 +66,22 @@ services:
     expose:
       - "6333"
       - "6334"
+    networks:
+      - exeiguard_net
     # Base vectorielle du RAG (rag/app/ingestion/ingest.py,
     # rag/app/main.py). Port publie sur 127.0.0.1 uniquement, meme
-    # raison que llm-server ci-dessus.
+    # raison que qdrant ci-dessus.
+    #
+    # Healthcheck TCP via bash (image qdrant sans curl/wget) : necessaire
+    # pour que le "condition: service_healthy" de rag ci-dessous soit une
+    # config Compose valide. NON TESTE - a verifier reellement sur la VM
+    # (cf. script de reprise / section "non verifiable sans la VM").
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   rag:
     build:
@@ -74,19 +99,23 @@ services:
     # syntec.pdf) n'est utilise qu'a l'ingestion manuelle
     # (rag/app/ingestion/ingest.py), jamais au demarrage du conteneur, et
     # n'a donc pas besoin d'etre fige dans l'image.
+    networks:
+      - exeiguard_net
     depends_on:
-      - qdrant
-      - llm-server
-    # Pas de "condition: service_healthy" : ni llm-server ni qdrant n'ont
-    # de HEALTHCHECK defini ici (dependance simple, demarrage best-effort
-    # - le endpoint /rag/query echouera proprement si l'un des deux n'est
-    # pas encore pret, cf. rag/app/main.py).
+      qdrant:
+        condition: service_healthy
+      llm-server:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
       interval: 10s
       timeout: 3s
       retries: 5
       start_period: 5s
+
+networks:
+  exeiguard_net:
+    driver: bridge
 
 volumes:
   ollama_models:
