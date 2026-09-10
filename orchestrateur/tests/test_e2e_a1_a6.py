@@ -9,10 +9,10 @@ Utilise TestClient (appels HTTP réels sur l'app FastAPI, pas des appels
 Python directs) pour rester fidèle à "via appels API".
 Utilise le cas réel Didier (cas_01_didier_reel.json) comme donnée d'entrée.
 
-JOUR 1 (câblage réel du pipeline) : les transitions extraire_evp,
-valider_transmission, calcul_termine et valider_bulletin déclenchent
-désormais un vrai appel HTTP sortant (httpx) vers extracteur-evp,
-compliance-validation et integration-sage (cf. orchestrateur/app/main.py,
+JOUR 1 (câblage réel du pipeline) : les transitions extraire_evp et
+calcul_termine déclenchent désormais un vrai appel HTTP sortant (httpx)
+vers extracteur-evp/compliance-validation et integration-sage/
+compliance-validation respectivement (cf. orchestrateur/app/main.py,
 _APPELS_PAR_ACTION). Ce fichier NE reteste PAS la logique métier de ces
 3 services (déjà couverte par leurs propres suites : 16/16 excel_parser,
 28/28 rule engine, tests dédiés du mock integration-sage) : httpx.post est
@@ -25,6 +25,14 @@ vrais services répondent réellement à ces appels, avec le code actuel
 construit en conteneur, est apportée séparément par la session de
 vérification manuelle (docker compose + curl, cf. rapport de vérification
 JOUR 1).
+
+Correction du 10/09/2026 (trouvée lors du test UI réel J2) :
+valider_transmission (A2->A3) et valider_bulletin (A4->A5) sont
+maintenant des décisions humaines PURES, sans appel HTTP — le contrôle de
+conformité compliance-validation est déclenché en ENTRÉE de A2/A4 (depuis
+extraire_evp et calcul_termine respectivement), pas en SORTIE par le clic
+de décision. Un dossier atterrit donc en A2/A4 avec ses 10 résultats déjà
+en base, avant toute décision humaine.
 """
 
 import base64
@@ -298,6 +306,85 @@ def test_parcours_complet_a1_a6(_stub_services_http):
         assert sum(a.startswith("transition_etat:") for a in actions) == len(SEQUENCE_NOMINALE)
     finally:
         session.close()
+
+
+def test_controle_conformite_disponible_avant_decision_humaine(_stub_services_http):
+    """Régression du défaut architectural corrigé le 10/09/2026 : les 10
+    résultats de conformité A2 doivent être en base dès que le dossier
+    atterrit en A2 (après extraire_evp), AVANT tout clic sur
+    valider_transmission — et pareil pour A4 après calcul_termine, avant
+    valider_bulletin. Si compliance-validation était encore rattaché à la
+    décision elle-même, ces assertions échoueraient (aucun Controle en
+    base au moment où on les vérifie ici)."""
+    cas = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    resp = client.post(
+        "/dossiers", json={"matricule": "0200", "contrat": cas["contrat"], "evp": cas["evp"]}
+    )
+    dossier_id = resp.json()["id"]
+
+    # --- extraire_evp seul (PAS valider_transmission) ---
+    resp = client.post(
+        f"/dossiers/{dossier_id}/transition",
+        json={
+            "action": "extraire_evp",
+            "acteur": "orchestrateur",
+            "evp_fichier_base64": _evp_fichier_base64(cas["evp"]),
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json()["etat"] == "A2"
+
+    session = SessionLocal()
+    try:
+        controles_a2 = session.query(Controle).filter_by(dossier_id=dossier_id, phase="A2").all()
+        assert len(controles_a2) == 10, (
+            "Le contrôle A2 doit déjà être en base juste après extraire_evp, "
+            "avant tout clic de décision humaine (valider_transmission)"
+        )
+    finally:
+        session.close()
+
+    # --- valider_transmission : décision pure, AUCUN nouvel appel compliance-validation ---
+    nb_appels_avant = sum(u.startswith(main_module.COMPLIANCE_VALIDATION_URL) for u in _stub_services_http)
+    resp = client.post(
+        f"/dossiers/{dossier_id}/transition",
+        json={"action": "valider_transmission", "acteur": "gestionnaire"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["etat"] == "A3"
+    nb_appels_apres = sum(u.startswith(main_module.COMPLIANCE_VALIDATION_URL) for u in _stub_services_http)
+    assert nb_appels_apres == nb_appels_avant, "valider_transmission ne doit plus appeler compliance-validation"
+
+    # --- calcul_termine seul (PAS valider_bulletin) ---
+    resp = client.post(
+        f"/dossiers/{dossier_id}/transition",
+        json={"action": "calcul_termine", "acteur": "orchestrateur"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["etat"] == "A4"
+
+    session = SessionLocal()
+    try:
+        controles_a4 = session.query(Controle).filter_by(dossier_id=dossier_id, phase="A4").all()
+        bulletins = session.query(Bulletin).filter_by(dossier_id=dossier_id).all()
+        assert len(controles_a4) == 10, (
+            "Le contrôle A4 doit déjà être en base juste après calcul_termine, "
+            "avant tout clic de décision humaine (valider_bulletin)"
+        )
+        assert len(bulletins) == 1
+    finally:
+        session.close()
+
+    # --- valider_bulletin : décision pure, AUCUN nouvel appel compliance-validation ---
+    nb_appels_avant = sum(u.startswith(main_module.COMPLIANCE_VALIDATION_URL) for u in _stub_services_http)
+    resp = client.post(
+        f"/dossiers/{dossier_id}/transition",
+        json={"action": "valider_bulletin", "acteur": "responsable_validation"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["etat"] == "A5"
+    nb_appels_apres = sum(u.startswith(main_module.COMPLIANCE_VALIDATION_URL) for u in _stub_services_http)
+    assert nb_appels_apres == nb_appels_avant, "valider_bulletin ne doit plus appeler compliance-validation"
 
 
 def test_transition_invalide_rejetee_et_journalisee():

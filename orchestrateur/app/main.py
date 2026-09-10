@@ -124,7 +124,17 @@ def _executer_extraction_evp(session, dossier: Dossier, payload: TransitionReque
     upload multipart (même contrat que la route, cf. extracteur-evp/app/
     main.py), puis persiste chaque ligne exploitable dans EVPEnregistrement.
     Toute erreur (base64 invalide, appel HTTP en échec, réponse non-200)
-    lève une HTTPException qui empêche l'appelant de faire avancer l'état."""
+    lève une HTTPException qui empêche l'appelant de faire avancer l'état.
+
+    Enchaîne ensuite sur le contrôle de conformité A2 (cf.
+    _executer_controle_conformite) : le dossier doit ATTERRIR en A2 avec
+    ses 10 résultats de règles déjà disponibles, pour que l'écran de
+    décision humaine (A2) affiche un vrai récapitulatif AVANT que le
+    gestionnaire ne clique quoi que ce soit — pas après. Corrigé le
+    10/09/2026 : cet appel était auparavant rattaché à la transition
+    "valider_transmission" (A2->A3), donc déclenché PAR la décision
+    humaine au lieu d'être disponible AVANT elle (défaut trouvé lors du
+    test UI réel)."""
     if not payload.evp_fichier_base64:
         raise HTTPException(
             status_code=400,
@@ -192,14 +202,26 @@ def _executer_extraction_evp(session, dossier: Dossier, payload: TransitionReque
         {"nb_lignes_extraites": corps.get("nb_lignes"), "nb_lignes_stockees": nb_lignes_stockees},
     )
 
+    # Contrôle de conformité A2 déclenché ICI (entrée en A2), pas à la
+    # sortie : si compliance-validation échoue, toute la transition
+    # extraire_evp est refusée (l'exception se propage), cohérent avec
+    # "pas d'avancement silencieux sur un échec".
+    _executer_controle_conformite(session, dossier, phase="A2")
+
 
 def _executer_controle_conformite(session, dossier: Dossier, phase: str) -> None:
     """Appel réel à compliance-validation (POST /evaluer), utilisé aussi
-    bien en A2 (pré-calcul) qu'en A4 (post-calcul, phase distinguée par
-    l'argument `phase`). Persiste les 10 résultats dans Controle. Un écart
-    de conformité ne bloque JAMAIS la transition (la décision finale reste
-    humaine, cf. guide) : il est journalisé comme anomalie dans audit_log
-    pour affichage côté UI."""
+    bien en A2 (pré-calcul, déclenché depuis _executer_extraction_evp) qu'en
+    A4 (post-calcul, déclenché depuis _executer_calcul_sage — phase
+    distinguée par l'argument `phase`). Persiste les 10 résultats dans
+    Controle. Un écart de conformité ne bloque JAMAIS la transition (la
+    décision finale reste humaine, cf. guide) : il est journalisé comme
+    anomalie dans audit_log pour affichage côté UI.
+
+    Volontairement PAS rattaché à valider_transmission/valider_bulletin :
+    ces deux transitions sont des décisions humaines pures (aucun appel
+    HTTP), le contrôle doit déjà être disponible en base quand l'écran de
+    décision s'affiche, pas déclenché par le clic de décision lui-même."""
     corps_requete = _dossier_salarie_payload(session, dossier)
     try:
         reponse = httpx.post(f"{COMPLIANCE_VALIDATION_URL}/evaluer", json=corps_requete, timeout=HTTP_TIMEOUT)
@@ -283,7 +305,11 @@ def _executer_controle_conformite(session, dossier: Dossier, phase: str) -> None
 def _executer_calcul_sage(session, dossier: Dossier) -> None:
     """Appel réel à integration-sage (POST /calculer, mock déterministe
     tant que l'API Sage réelle n'est pas accessible). Persiste le
-    BulletinSalaire obtenu dans la table Bulletin."""
+    BulletinSalaire obtenu dans la table Bulletin, puis enchaîne sur le
+    contrôle de conformité A4 (cf. _executer_controle_conformite) : le
+    dossier doit ATTERRIR en A4 avec le bulletin ET ses 10 résultats
+    post-calcul déjà disponibles, pour que l'écran de décision humaine
+    (A4) affiche un vrai récapitulatif AVANT le clic, pas après."""
     corps_requete = _dossier_salarie_payload(session, dossier)
     try:
         reponse = httpx.post(f"{INTEGRATION_SAGE_URL}/calculer", json=corps_requete, timeout=HTTP_TIMEOUT)
@@ -318,19 +344,23 @@ def _executer_calcul_sage(session, dossier: Dossier) -> None:
         {"net_a_payer": bulletin_json.get("net_a_payer")},
     )
 
+    # Contrôle de conformité A4 déclenché ICI (entrée en A4), pas à la
+    # sortie : cf. commentaire équivalent dans _executer_extraction_evp.
+    # _dossier_salarie_payload relit la base après le commit ci-dessus,
+    # donc bulletins_historique inclut déjà ce bulletin pour l'évaluation.
+    _executer_controle_conformite(session, dossier, phase="A4")
+
 
 # Actions de transition qui déclenchent un appel inter-service réel avant de
 # faire avancer l'état. Le mapping ne prend que dossier/session/payload en
 # entrée : action -> callable(session, dossier, payload).
+#
+# valider_transmission (A2->A3) et valider_bulletin (A4->A5) sont
+# volontairement ABSENTES de ce mapping : ce sont des décisions humaines
+# pures (aucun appel HTTP), cf. commentaires de _executer_controle_conformite.
 _APPELS_PAR_ACTION = {
     "extraire_evp": lambda session, dossier, payload: _executer_extraction_evp(session, dossier, payload),
-    "valider_transmission": lambda session, dossier, payload: _executer_controle_conformite(
-        session, dossier, phase="A2"
-    ),
     "calcul_termine": lambda session, dossier, payload: _executer_calcul_sage(session, dossier),
-    "valider_bulletin": lambda session, dossier, payload: _executer_controle_conformite(
-        session, dossier, phase="A4"
-    ),
 }
 
 

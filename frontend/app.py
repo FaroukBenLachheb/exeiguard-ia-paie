@@ -455,11 +455,14 @@ def ecran_validation_humaine():
     st.subheader(f"Décision requise — état {LIBELLE_ETAPE.get(dossier['etat'], dossier['etat'])}")
 
     phase = "A2" if dossier["etat"] in ("A2", "A2_3") else "A4"
+    # Depuis la correction du 10/09/2026 (défaut architectural trouvé lors
+    # du test UI), le contrôle de conformité {phase} est déclenché à
+    # l'ENTRÉE de cet état (extraire_evp pour A2, calcul_termine pour A4),
+    # pas par le clic de décision lui-même : les résultats doivent donc
+    # TOUJOURS être déjà en base ici, avant tout bouton Valider/Corriger/
+    # Rejeter — jamais après.
     ok_c, controles = api_get(f"{ORCHESTRATEUR_URL}/dossiers/{dossier['id']}/controles", params={"phase": phase})
     if ok_c and controles:
-        # Cas d'un retour en A2/A4 après une boucle (A2_3/A4_3) : un
-        # contrôle {phase} a déjà été exécuté lors d'un passage précédent,
-        # son résultat est donc un vrai récapitulatif exploitable ici.
         non_conformes = [c for c in controles if c["resultat"] != "conforme"]
         st.markdown(f"**Récapitulatif du contrôle {phase}** ({len(controles)} règle(s) évaluée(s))")
         if non_conformes:
@@ -477,23 +480,18 @@ def ecran_validation_humaine():
             )
             st.dataframe(df, use_container_width=True, hide_index=True)
     else:
-        # Cas nominal (première visite de cet état) : le contrôle de
-        # conformité {phase} n'a PAS encore été exécuté — il est déclenché
-        # par l'action "Valider..." ci-dessous elle-même (appel réel à
-        # compliance-validation, cf. orchestrateur/app/main.py), qui fait
-        # aussi avancer l'état dans le même appel. Il n'y a donc pas de
-        # récapitulatif à afficher avant ce clic ; le dire clairement plutôt
-        # que de laisser un vide.
-        st.info(
-            f"Le contrôle de conformité {phase} n'a pas encore été exécuté pour ce dossier. "
-            "Il sera déclenché par l'action « Valider » ci-dessous (appel réel à "
-            "compliance-validation), qui fait avancer le dossier dans le même appel."
+        # Ne devrait plus arriver en fonctionnement normal (cf. commentaire
+        # ci-dessus) : signalé comme anomalie, pas comme un état attendu.
+        st.error(
+            f"⚠️ Aucun résultat de contrôle {phase} trouvé en base pour ce dossier alors que l'état "
+            f"{dossier['etat']} devrait toujours en contenir un — vérifier audit_log (écran 5)."
         )
-        if phase == "A4":
-            ok_b, bulletins = api_get(f"{ORCHESTRATEUR_URL}/dossiers/{dossier['id']}/bulletins")
-            if ok_b and bulletins:
-                st.warning("⚠️ CALCUL DE DÉMONSTRATION — en attente d'intégration Sage réelle.")
-                st.json(bulletins[-1]["bulletin"])
+
+    if phase == "A4":
+        ok_b, bulletins = api_get(f"{ORCHESTRATEUR_URL}/dossiers/{dossier['id']}/bulletins")
+        if ok_b and bulletins:
+            st.warning("⚠️ CALCUL DE DÉMONSTRATION — en attente d'intégration Sage réelle.")
+            st.json(bulletins[-1]["bulletin"])
 
     st.divider()
     acteur = st.selectbox("Acteur (qui prend la décision)", ACTEURS_POSSIBLES)
