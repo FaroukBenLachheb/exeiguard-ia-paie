@@ -42,6 +42,11 @@ services:
     # (voir commentaire en tete de fichier).
     networks:
       - exeiguard_net
+    # Healthcheck verifie reellement en local (Docker Desktop,
+    # 2026-09-10) : "ollama list" est bien present dans l'image et
+    # passe a "healthy" des le demarrage ; confirme egalement apres un
+    # "ollama pull" d'un modele de test (qwen2.5:0.5b), le modele
+    # apparaissant dans la sortie de "ollama list".
     healthcheck:
       test: ["CMD-SHELL", "ollama list || exit 1"]
       interval: 10s
@@ -72,10 +77,16 @@ services:
     # rag/app/main.py). Port publie sur 127.0.0.1 uniquement, meme
     # raison que qdrant ci-dessus.
     #
-    # Healthcheck TCP via bash (image qdrant sans curl/wget) : necessaire
-    # pour que le "condition: service_healthy" de rag ci-dessous soit une
-    # config Compose valide. NON TESTE - a verifier reellement sur la VM
-    # (cf. script de reprise / section "non verifiable sans la VM").
+    # Healthcheck TCP via bash. Verifie reellement en local (Docker
+    # Desktop, 2026-09-10) : qdrant/qdrant:latest est une image Debian
+    # 13 (trixie), PAS distroless, et contient bien /usr/bin/bash (curl
+    # et wget en revanche sont absents, d'ou le choix du trick
+    # /dev/tcp). L'alternative "sh -c ... /dev/tcp" ne fonctionne PAS
+    # ici : /usr/bin/sh est un symlink vers dash, qui ne supporte pas
+    # la redirection /dev/tcp (fonctionnalite propre a bash). Le
+    # healthcheck ci-dessous atteint "healthy" en ~20s en local
+    # (docker compose up -d qdrant && docker inspect --format=
+    # '{{.State.Health.Status}}' <container>).
     healthcheck:
       test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
       interval: 10s
