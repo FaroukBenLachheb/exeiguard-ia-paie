@@ -1,0 +1,15 @@
+# frontend/.streamlit/config.toml
+#
+# Thème sobre et professionnel (JOUR 3) : palette bleu marine/gris/blanc,
+# pas de couleurs vives. La différenciation de statut (conforme/non
+# conforme, succès/erreur) se fait par couleur sémantique + gras dans le
+# contenu applicatif (cf. frontend/app.py::_banniere/_style_conforme),
+# pas par ce thème général qui ne concerne que le chrome de l'app
+# (boutons, fonds, texte).
+
+[theme]
+primaryColor = "#1B2A4A"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F2F3F5"
+textColor = "#2B2F36"
+font = "sans serif"
