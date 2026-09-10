@@ -392,6 +392,103 @@ def obtenir_etat(dossier_id: str):
         session.close()
 
 
+# --- Endpoints de lecture (JOUR 2, frontend) -------------------------------
+# Aucun n'existait avant JOUR 2 : le frontend (frontend/app.py) a besoin de
+# lire les résultats déjà persistés par les transitions (extraction EVP,
+# contrôles de conformité, bulletin simulé, journal d'audit) sans les
+# recalculer ni les simuler côté UI.
+
+
+@app.get("/dossiers/{dossier_id}/evp")
+def obtenir_evp(dossier_id: str):
+    session = SessionLocal()
+    try:
+        if session.get(Dossier, dossier_id) is None:
+            raise HTTPException(status_code=404, detail="Dossier introuvable")
+        rows = (
+            session.query(EVPEnregistrement)
+            .filter_by(dossier_id=dossier_id)
+            .order_by(EVPEnregistrement.created_at)
+            .all()
+        )
+        return [
+            {
+                "id": r.id,
+                "evp": r.evp_json,
+                "source_extraction": r.source_extraction,
+                "score_confiance": r.score_confiance,
+                "created_at": r.created_at.isoformat(),
+            }
+            for r in rows
+        ]
+    finally:
+        session.close()
+
+
+@app.get("/dossiers/{dossier_id}/controles")
+def obtenir_controles(dossier_id: str, phase: str | None = None):
+    session = SessionLocal()
+    try:
+        if session.get(Dossier, dossier_id) is None:
+            raise HTTPException(status_code=404, detail="Dossier introuvable")
+        query = session.query(Controle).filter_by(dossier_id=dossier_id)
+        if phase:
+            query = query.filter_by(phase=phase)
+        rows = query.order_by(Controle.phase, Controle.regle_id).all()
+        return [
+            {
+                "id": r.id,
+                "phase": r.phase,
+                "regle_id": r.regle_id,
+                "resultat": r.resultat,
+                "explication": r.explication,
+                "source": r.source,
+                "created_at": r.created_at.isoformat(),
+            }
+            for r in rows
+        ]
+    finally:
+        session.close()
+
+
+@app.get("/dossiers/{dossier_id}/bulletins")
+def obtenir_bulletins(dossier_id: str):
+    session = SessionLocal()
+    try:
+        if session.get(Dossier, dossier_id) is None:
+            raise HTTPException(status_code=404, detail="Dossier introuvable")
+        rows = session.query(Bulletin).filter_by(dossier_id=dossier_id).order_by(Bulletin.created_at).all()
+        return [{"id": r.id, "bulletin": r.bulletin_json, "created_at": r.created_at.isoformat()} for r in rows]
+    finally:
+        session.close()
+
+
+@app.get("/dossiers/{dossier_id}/audit")
+def obtenir_audit(dossier_id: str):
+    session = SessionLocal()
+    try:
+        if session.get(Dossier, dossier_id) is None:
+            raise HTTPException(status_code=404, detail="Dossier introuvable")
+        rows = (
+            session.query(AuditLog)
+            .filter_by(dossier_id=dossier_id)
+            .order_by(AuditLog.horodatage)
+            .all()
+        )
+        return [
+            {
+                "horodatage": r.horodatage.isoformat(),
+                "acteur": r.acteur,
+                "action": r.action,
+                "resultat": r.resultat,
+                "details": r.details_json,
+            }
+            for r in rows
+        ]
+    finally:
+        session.close()
+
+
 @app.post("/dossiers/{dossier_id}/transition", response_model=TransitionResponse)
 def transitionner(dossier_id: str, payload: TransitionRequest):
     session = SessionLocal()

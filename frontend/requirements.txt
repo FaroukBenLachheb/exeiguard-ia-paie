@@ -1,0 +1,11 @@
+# requirements.txt — frontend Streamlit (JOUR 2)
+
+streamlit>=1.38,<2
+httpx>=0.27,<1
+pandas>=2.2,<3
+# Nécessaire pour reconstruire un classeur .xlsx EVP à partir d'un cas de
+# test (tests/fixtures/*.json) avant de l'envoyer, en upload multipart réel,
+# à extracteur-evp/POST /extraire (cf. construire_xlsx_depuis_evp dans
+# app.py) : cette conversion n'est PAS de la donnée simulée, seulement le
+# réencodage du contenu réel de la fixture au format attendu par l'API.
+openpyxl>=3.1,<4

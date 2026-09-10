@@ -164,6 +164,13 @@ services:
     environment:
       OLLAMA_HOST: llm-server
       QDRANT_HOST: qdrant
+    ports:
+      - "8001:8000"
+    # Port publié sur l'hôte (JOUR 2) : frontend/app.py (Streamlit, lancé
+    # en Python natif sur l'hôte, pas dans docker-compose) appelle POST
+    # /rag/query directement sur ce service, comme orchestrateur ci-dessus
+    # (même raison : dev local actif, à retirer avant mise en situation
+    # réelle - cf. commentaire sur le service orchestrateur).
     expose:
       - "8000"
     volumes:
