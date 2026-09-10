@@ -1,8 +1,8 @@
 # Dockerfile — service integration-sage
 #
-# Squelette en attendant l'implementation metier (integration Sage,
-# mock puis reelle, phases D.4+). Suffisant pour demarrer dans
-# docker-compose et exposer GET /health, en attendant le vrai code.
+# Mock deterministe (mock/calcul_simule.py, phase JOUR 1) branche sur
+# POST /calculer, en attendant l'acces a l'API Sage reelle (voir
+# integration-sage/README.md).
 #
 # Dependances partagees (shared/) : voir
 # docs/architecture/dependances-partagees.md pour le pattern commun aux
@@ -10,8 +10,9 @@
 # shared/requirements.txt est installe en plus du requirements.txt du
 # service, et PYTHONPATH inclut /app/shared pour que
 # `from schemas import ...` fonctionne sans sys.path.insert dans le code
-# applicatif (utile des que ce service importera shared/schemas, phases
-# D.4+).
+# applicatif. mock/ est copie a cote de app/ egalement (import "from
+# mock.calcul_simule import ..." dans app/main.py, package top-level au
+# meme titre que "app" et "shared").
 
 FROM python:3.11-slim
 
@@ -22,6 +23,7 @@ COPY shared/requirements.txt ./shared-requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt -r shared-requirements.txt
 
 COPY integration-sage/app/ ./app/
+COPY integration-sage/mock/ ./mock/
 COPY shared/ ./shared/
 
 ENV PYTHONPATH=/app/shared

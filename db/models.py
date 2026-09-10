@@ -76,6 +76,9 @@ class Dossier(Base):
     controles: Mapped[list["Controle"]] = relationship(
         back_populates="dossier", cascade="all, delete-orphan"
     )
+    bulletins: Mapped[list["Bulletin"]] = relationship(
+        back_populates="dossier", cascade="all, delete-orphan"
+    )
     decisions: Mapped[list["Decision"]] = relationship(
         back_populates="dossier", cascade="all, delete-orphan"
     )
@@ -125,6 +128,26 @@ class Controle(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     dossier: Mapped["Dossier"] = relationship(back_populates="controles")
+
+
+class Bulletin(Base):
+    """
+    Un bulletin de paie calculé pour un dossier (Phase D.4+, JOUR 1 :
+    calcul mock integration-sage, calcul Sage réel plus tard sans
+    changement de schéma). Correspond à BulletinSalaire
+    (shared/schemas/bulletin.py).
+    """
+
+    __tablename__ = "bulletins"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    dossier_id: Mapped[str] = mapped_column(ForeignKey("dossiers.id"), index=True)
+
+    bulletin_json: Mapped[dict] = mapped_column(JSON)  # BulletinSalaire.model_dump()
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    dossier: Mapped["Dossier"] = relationship(back_populates="bulletins")
 
 
 class Decision(Base):

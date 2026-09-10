@@ -3,10 +3,14 @@
 # Sert a valider que chaque service se construit et demarre correctement
 # en local, en preparation de l'integration sur la VM GPU (pas de GPU en
 # local : la reservation GPU de llm-server reste commentee ci-dessous).
-# La logique metier des services extracteur-evp / compliance-validation /
-# integration-sage n'est pas encore implementee (phases D.4+) : ils
-# exposent uniquement GET /health pour l'instant, ce qui permet a toute
-# la stack de demarrer sans erreur des maintenant.
+#
+# JOUR 1 (cablage reel du pipeline, verifie en local le 10/09) :
+# extracteur-evp (POST /extraire), compliance-validation (POST /evaluer)
+# et integration-sage (POST /calculer, mock deterministe en attendant
+# l'API Sage reelle, voir integration-sage/README.md) exposent desormais
+# leur logique metier, et l'orchestrateur les appelle reellement (httpx)
+# a chaque transition A1->A6 concernee, au lieu de se contenter de
+# changer un statut en base.
 
 services:
   postgres:

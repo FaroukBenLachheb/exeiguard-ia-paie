@@ -27,6 +27,15 @@ class TransitionRequest(BaseModel):
     action: str  # ex: "extraire_evp", "detecter_ecart"...
     acteur: str  # ex: "gestionnaire", "orchestrateur", "responsable_validation"
     commentaire: Optional[str] = None
+    # Requis uniquement pour action="extraire_evp" : contenu du fichier EVP
+    # .xlsx encodé en base64. Choix retenu (vs. chemin de fichier côté
+    # conteneur) car il voyage dans le même JSON que le reste de la requête
+    # de transition, sans dépendre d'un volume partagé entre l'appelant et
+    # le conteneur orchestrateur — le plus simple à appeler depuis un
+    # client HTTP externe (curl, frontend) comme depuis l'orchestrateur
+    # lui-même, qui le retransmet tel quel (décodé) en upload multipart à
+    # extracteur-evp.
+    evp_fichier_base64: Optional[str] = None
 
 
 class TransitionResponse(BaseModel):

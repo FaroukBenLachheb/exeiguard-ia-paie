@@ -20,6 +20,8 @@ développement local (D.3), l'import direct suffit.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import os
 import sys
 from pathlib import Path
@@ -45,11 +47,12 @@ for _candidate in (_HERE.parents[1] / "db", _HERE.parents[2] / "db"):
         sys.path.insert(0, str(_candidate))
         break
 
+import httpx  # noqa: E402
 from fastapi import FastAPI, HTTPException  # noqa: E402
 from transitions import MachineError  # noqa: E402
 
 from database import SessionLocal, init_db  # noqa: E402
-from models import AuditLog, Dossier  # noqa: E402
+from models import AuditLog, Bulletin, Controle, Dossier, EVPEnregistrement  # noqa: E402
 
 from state_machine import DossierStateMachine  # noqa: E402
 from schemas import (  # noqa: E402  (schémas API, distincts de db/models.py)
@@ -60,6 +63,14 @@ from schemas import (  # noqa: E402  (schémas API, distincts de db/models.py)
 )
 
 app = FastAPI(title="Exeiguard - Orchestrateur", version="0.1.0")
+
+# Noms d'hôtes = noms de service Docker Compose (docker-compose.dev.yml et
+# docker-compose.yml), résolus via le réseau "exeiguard_net". Surchargeables
+# par variable d'environnement pour les tests (cf. orchestrateur/tests/).
+EXTRACTEUR_EVP_URL = os.getenv("EXTRACTEUR_EVP_URL", "http://extracteur-evp:8000")
+COMPLIANCE_VALIDATION_URL = os.getenv("COMPLIANCE_VALIDATION_URL", "http://compliance-validation:8000")
+INTEGRATION_SAGE_URL = os.getenv("INTEGRATION_SAGE_URL", "http://integration-sage:8000")
+HTTP_TIMEOUT = float(os.getenv("ORCHESTRATEUR_HTTP_TIMEOUT", "10.0"))
 
 
 @app.on_event("startup")
@@ -83,6 +94,242 @@ def _audit(session, dossier_id: str, acteur: str, action: str, resultat: str, de
         )
     )
     session.commit()
+
+
+def _dossier_salarie_payload(session, dossier: Dossier) -> dict:
+    """Reconstruit le corps DossierSalarie (shared/schemas/dossier.py)
+    attendu par compliance-validation et integration-sage, à partir de
+    l'état actuellement connu en base pour ce dossier (contrat figé à la
+    création + tout l'historique EVP/bulletins déjà stocké)."""
+    evp_rows = (
+        session.query(EVPEnregistrement)
+        .filter_by(dossier_id=dossier.id)
+        .order_by(EVPEnregistrement.created_at)
+        .all()
+    )
+    bulletin_rows = (
+        session.query(Bulletin).filter_by(dossier_id=dossier.id).order_by(Bulletin.created_at).all()
+    )
+    return {
+        "matricule": dossier.matricule,
+        "contrat": dossier.contrat_json,
+        "evp_historique": [row.evp_json for row in evp_rows],
+        "bulletins_historique": [row.bulletin_json for row in bulletin_rows],
+    }
+
+
+def _executer_extraction_evp(session, dossier: Dossier, payload: TransitionRequest) -> None:
+    """Appel réel à extracteur-evp (POST /extraire) AVANT la transition
+    A1->A2. Décode le fichier EVP .xlsx transmis en base64, le pousse en
+    upload multipart (même contrat que la route, cf. extracteur-evp/app/
+    main.py), puis persiste chaque ligne exploitable dans EVPEnregistrement.
+    Toute erreur (base64 invalide, appel HTTP en échec, réponse non-200)
+    lève une HTTPException qui empêche l'appelant de faire avancer l'état."""
+    if not payload.evp_fichier_base64:
+        raise HTTPException(
+            status_code=400,
+            detail="evp_fichier_base64 requis pour l'action 'extraire_evp' "
+            "(contenu du fichier EVP .xlsx encodé en base64)",
+        )
+    try:
+        contenu = base64.b64decode(payload.evp_fichier_base64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"evp_fichier_base64 invalide : {exc}") from None
+
+    try:
+        reponse = httpx.post(
+            f"{EXTRACTEUR_EVP_URL}/extraire",
+            files={
+                "fichier": (
+                    "evp.xlsx",
+                    contenu,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+            timeout=HTTP_TIMEOUT,
+        )
+    except httpx.HTTPError as exc:
+        _audit(session, dossier.id, "orchestrateur", "appel_extracteur_evp", "echec", {"erreur": str(exc)})
+        raise HTTPException(status_code=502, detail=f"Appel à extracteur-evp échoué : {exc}") from None
+
+    if reponse.status_code != 200:
+        _audit(
+            session,
+            dossier.id,
+            "orchestrateur",
+            "appel_extracteur_evp",
+            "echec",
+            {"status_code": reponse.status_code, "corps": reponse.text[:500]},
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"extracteur-evp a répondu {reponse.status_code} : {reponse.text[:300]}",
+        )
+
+    corps = reponse.json()
+    nb_lignes_stockees = 0
+    for ligne in corps.get("lignes", []):
+        if not ligne.get("evp"):
+            continue  # ligne non exploitable (erreurs déjà tracées côté extracteur-evp), non stockée
+        score = (ligne.get("score_confiance") or {}).get("valeur")
+        session.add(
+            EVPEnregistrement(
+                dossier_id=dossier.id,
+                evp_json=ligne["evp"],
+                source_extraction="parsing_direct",
+                score_confiance=score,
+            )
+        )
+        nb_lignes_stockees += 1
+    session.commit()
+
+    _audit(
+        session,
+        dossier.id,
+        "orchestrateur",
+        "appel_extracteur_evp",
+        "succes",
+        {"nb_lignes_extraites": corps.get("nb_lignes"), "nb_lignes_stockees": nb_lignes_stockees},
+    )
+
+
+def _executer_controle_conformite(session, dossier: Dossier, phase: str) -> None:
+    """Appel réel à compliance-validation (POST /evaluer), utilisé aussi
+    bien en A2 (pré-calcul) qu'en A4 (post-calcul, phase distinguée par
+    l'argument `phase`). Persiste les 10 résultats dans Controle. Un écart
+    de conformité ne bloque JAMAIS la transition (la décision finale reste
+    humaine, cf. guide) : il est journalisé comme anomalie dans audit_log
+    pour affichage côté UI."""
+    corps_requete = _dossier_salarie_payload(session, dossier)
+    try:
+        reponse = httpx.post(f"{COMPLIANCE_VALIDATION_URL}/evaluer", json=corps_requete, timeout=HTTP_TIMEOUT)
+    except httpx.HTTPError as exc:
+        _audit(
+            session,
+            dossier.id,
+            "orchestrateur",
+            f"appel_compliance_validation:{phase}",
+            "echec",
+            {"erreur": str(exc)},
+        )
+        raise HTTPException(status_code=502, detail=f"Appel à compliance-validation échoué : {exc}") from None
+
+    if reponse.status_code != 200:
+        _audit(
+            session,
+            dossier.id,
+            "orchestrateur",
+            f"appel_compliance_validation:{phase}",
+            "echec",
+            {"status_code": reponse.status_code, "corps": reponse.text[:500]},
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"compliance-validation a répondu {reponse.status_code} : {reponse.text[:300]}",
+        )
+
+    corps = reponse.json()
+    resultats = corps.get("resultats", [])
+    non_conformes = []
+    for resultat in resultats:
+        conforme = resultat.get("conforme")
+        message = resultat.get("message") or ""
+        citation = resultat.get("source")  # citation légale précise (RG-XX), pas le sous-système
+        explication = f"{message} (source : {citation})" if citation else message
+        session.add(
+            Controle(
+                dossier_id=dossier.id,
+                phase=phase,
+                regle_id=resultat.get("regle_id"),
+                resultat="conforme" if conforme else "ecart",
+                explication=explication[:2000],
+                # Colonne source = sous-système ayant produit le résultat (cf.
+                # db/models.py : "rule_engine"/"rag"/"delta_historique"), PAS
+                # la citation légale (trop longue pour String(20), déjà
+                # reportée dans `explication` ci-dessus).
+                source="rule_engine",
+            )
+        )
+        if not conforme:
+            non_conformes.append(resultat)
+    session.commit()
+
+    _audit(
+        session,
+        dossier.id,
+        "orchestrateur",
+        f"appel_compliance_validation:{phase}",
+        "succes",
+        {"nb_regles": len(resultats), "nb_non_conformes": len(non_conformes)},
+    )
+
+    if non_conformes:
+        _audit(
+            session,
+            dossier.id,
+            "orchestrateur",
+            f"anomalie_conformite:{phase}",
+            "alerte",
+            {
+                "regles_non_conformes": [
+                    {"regle_id": r.get("regle_id"), "message": r.get("message")} for r in non_conformes
+                ]
+            },
+        )
+
+
+def _executer_calcul_sage(session, dossier: Dossier) -> None:
+    """Appel réel à integration-sage (POST /calculer, mock déterministe
+    tant que l'API Sage réelle n'est pas accessible). Persiste le
+    BulletinSalaire obtenu dans la table Bulletin."""
+    corps_requete = _dossier_salarie_payload(session, dossier)
+    try:
+        reponse = httpx.post(f"{INTEGRATION_SAGE_URL}/calculer", json=corps_requete, timeout=HTTP_TIMEOUT)
+    except httpx.HTTPError as exc:
+        _audit(session, dossier.id, "orchestrateur", "appel_integration_sage", "echec", {"erreur": str(exc)})
+        raise HTTPException(status_code=502, detail=f"Appel à integration-sage échoué : {exc}") from None
+
+    if reponse.status_code != 200:
+        _audit(
+            session,
+            dossier.id,
+            "orchestrateur",
+            "appel_integration_sage",
+            "echec",
+            {"status_code": reponse.status_code, "corps": reponse.text[:500]},
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"integration-sage a répondu {reponse.status_code} : {reponse.text[:300]}",
+        )
+
+    bulletin_json = reponse.json()
+    session.add(Bulletin(dossier_id=dossier.id, bulletin_json=bulletin_json))
+    session.commit()
+
+    _audit(
+        session,
+        dossier.id,
+        "orchestrateur",
+        "appel_integration_sage",
+        "succes",
+        {"net_a_payer": bulletin_json.get("net_a_payer")},
+    )
+
+
+# Actions de transition qui déclenchent un appel inter-service réel avant de
+# faire avancer l'état. Le mapping ne prend que dossier/session/payload en
+# entrée : action -> callable(session, dossier, payload).
+_APPELS_PAR_ACTION = {
+    "extraire_evp": lambda session, dossier, payload: _executer_extraction_evp(session, dossier, payload),
+    "valider_transmission": lambda session, dossier, payload: _executer_controle_conformite(
+        session, dossier, phase="A2"
+    ),
+    "calcul_termine": lambda session, dossier, payload: _executer_calcul_sage(session, dossier),
+    "valider_bulletin": lambda session, dossier, payload: _executer_controle_conformite(
+        session, dossier, phase="A4"
+    ),
+}
 
 
 @app.post("/dossiers", response_model=DossierResponse, status_code=201)
@@ -153,6 +400,32 @@ def transitionner(dossier_id: str, payload: TransitionRequest):
 
         etat_precedent = dossier.etat
         sm = DossierStateMachine(etat_initial=etat_precedent)
+
+        # Légalité de la transition vérifiée AVANT tout appel inter-service :
+        # inutile (et risqué) d'appeler extracteur-evp/compliance-validation/
+        # integration-sage pour une transition qui sera de toute façon
+        # refusée par la machine à états.
+        if payload.action not in sm.triggers_disponibles():
+            _audit(
+                session,
+                dossier_id,
+                payload.acteur,
+                f"transition_refusee:{payload.action}",
+                "echec",
+                {"raison": f"Action inconnue ou impossible depuis {etat_precedent}", "etat_courant": etat_precedent},
+            )
+            raise HTTPException(
+                status_code=409,
+                detail=f"Transition '{payload.action}' impossible depuis l'état {etat_precedent}",
+            )
+
+        # Appel réel au service concerné, AVANT de faire avancer l'état : si
+        # l'appel échoue, la fonction lève une HTTPException et la
+        # transition n'est jamais déclenchée (pas d'avancement silencieux
+        # sur un échec).
+        appel = _APPELS_PAR_ACTION.get(payload.action)
+        if appel is not None:
+            appel(session, dossier, payload)
 
         try:
             nouvel_etat = sm.declencher(payload.action)
