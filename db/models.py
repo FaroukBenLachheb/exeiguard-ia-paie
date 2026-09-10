@@ -30,6 +30,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     String,
+    Text,
     func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -122,7 +123,12 @@ class Controle(Base):
     phase: Mapped[str] = mapped_column(String(10))  # "A2" ou "A4"
     regle_id: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # ex: "RG-03"
     resultat: Mapped[str] = mapped_column(String(20))  # "conforme" / "ecart" / "alerte"
-    explication: Mapped[Optional[str]] = mapped_column(String(2000), nullable=True)
+    # Text (sans limite arbitraire), pas String(2000) : porte le message du
+    # Rule Engine ET la citation réglementaire complète (ex: "Article 7.1
+    # CCN SYNTEC (IDCC 1486)..."), qui est une exigence du projet, pas un
+    # détail cosmétique tronquable. Corrigé le 10/09/2026 après un DataError
+    # Postgres réel (voir migration 6e43748f892b).
+    explication: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     source: Mapped[str] = mapped_column(String(20))  # "rule_engine" / "rag" / "delta_historique"
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

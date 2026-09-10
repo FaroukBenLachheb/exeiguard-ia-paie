@@ -242,11 +242,13 @@ def _executer_controle_conformite(session, dossier: Dossier, phase: str) -> None
                 phase=phase,
                 regle_id=resultat.get("regle_id"),
                 resultat="conforme" if conforme else "ecart",
-                explication=explication[:2000],
+                # explication est Text (sans limite arbitraire, cf. db/models.py
+                # et migration 6e43748f892b) : aucune troncature ici, la
+                # citation réglementaire complète doit être conservée.
+                explication=explication,
                 # Colonne source = sous-système ayant produit le résultat (cf.
                 # db/models.py : "rule_engine"/"rag"/"delta_historique"), PAS
-                # la citation légale (trop longue pour String(20), déjà
-                # reportée dans `explication` ci-dessus).
+                # la citation légale (portée par `explication` ci-dessus).
                 source="rule_engine",
             )
         )
