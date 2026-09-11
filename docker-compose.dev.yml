@@ -11,6 +11,11 @@
 # leur logique metier, et l'orchestrateur les appelle reellement (httpx)
 # a chaque transition A1->A6 concernee, au lieu de se contenter de
 # changer un statut en base.
+#
+# JOUR 4 : frontend (Streamlit, frontend/app.py) conteneurise a son tour,
+# dernier service applicatif du pipeline a l'etre. Comme qdrant et
+# llm-server, son port n'est publie que sur 127.0.0.1 (jamais 0.0.0.0) :
+# accessible depuis l'exterieur uniquement via tunnel SSH.
 
 services:
   postgres:
@@ -166,10 +171,12 @@ services:
       QDRANT_HOST: qdrant
     ports:
       - "8001:8000"
-    # Port publié sur l'hôte (JOUR 2) : frontend/app.py (Streamlit, lancé
-    # en Python natif sur l'hôte, pas dans docker-compose) appelle POST
-    # /rag/query directement sur ce service, comme orchestrateur ci-dessus
-    # (même raison : dev local actif, à retirer avant mise en situation
+    # Port publié sur l'hôte (JOUR 2, mis à jour JOUR 4) : le service
+    # frontend (Streamlit, conteneurisé ci-dessous) appelle POST
+    # /rag/query directement sur ce service via RAG_URL=http://rag:8000
+    # (nom de service Docker), comme orchestrateur ci-dessus. Le port
+    # 8001 reste publié sur l'hôte pour du débogage direct depuis la
+    # machine hôte (dev local actif, à retirer avant mise en situation
     # réelle - cf. commentaire sur le service orchestrateur).
     expose:
       - "8000"
@@ -188,6 +195,32 @@ services:
       timeout: 3s
       retries: 5
       start_period: 5s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    environment:
+      ORCHESTRATEUR_URL: http://orchestrateur:8000
+      RAG_URL: http://rag:8000
+    ports:
+      - "127.0.0.1:8501:8501"
+    # Meme logique de securite que qdrant/llm-server ci-dessus : accessible
+    # uniquement depuis la machine hote (tunnel SSH depuis l'exterieur),
+    # jamais expose publiquement sur 0.0.0.0. C'est l'interface destinee a
+    # etre montree au CEO (cf. frontend/app.py), pas un service interne au
+    # pipeline, mais elle n'a pas vocation a etre publique pour autant.
+    networks:
+      - exeiguard_net
+    depends_on:
+      orchestrateur:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
 
 networks:
   exeiguard_net:
