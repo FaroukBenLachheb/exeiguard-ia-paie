@@ -58,6 +58,7 @@ from state_machine import DossierStateMachine  # noqa: E402
 from schemas import (  # noqa: E402  (schémas API, distincts de db/models.py)
     CreationDossierRequest,
     DossierResponse,
+    SalarieConnu,
     TransitionRequest,
     TransitionResponse,
 )
@@ -370,6 +371,33 @@ def creer_dossier(payload: CreationDossierRequest):
     try:
         import datetime as dt
 
+        # JOUR 4 (écran 0 "salarié déjà connu") : pas de table Salarie
+        # séparée dans le modèle actuel (cf. db/models.py) - un "salarié
+        # déjà connu" est simplement un matricule déjà présent sur un
+        # dossier existant. `contrat` reste la voie normale (nouveau
+        # salarié) ; `matricule_reference` recopie le contrat du DERNIER
+        # dossier connu pour ce matricule, sans que le client ait besoin
+        # de le retransmettre en entier.
+        contrat = payload.contrat
+        if contrat is None:
+            if not payload.matricule_reference:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Fournir soit 'contrat', soit 'matricule_reference' (salarié déjà connu)",
+                )
+            dernier = (
+                session.query(Dossier)
+                .filter_by(matricule=payload.matricule_reference)
+                .order_by(Dossier.created_at.desc())
+                .first()
+            )
+            if dernier is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Aucun dossier connu pour le matricule '{payload.matricule_reference}'",
+                )
+            contrat = dernier.contrat_json
+
         periode_str = (payload.evp or {}).get("periode")
         periode = (
             dt.date.fromisoformat(periode_str)
@@ -378,12 +406,12 @@ def creer_dossier(payload: CreationDossierRequest):
         )
 
         dossier = Dossier(
-            matricule=payload.matricule,
-            prenom=payload.contrat.get("prenom", "inconnu"),
-            nom=payload.contrat.get("nom"),
+            matricule=payload.matricule or payload.matricule_reference,
+            prenom=contrat.get("prenom", "inconnu"),
+            nom=contrat.get("nom"),
             periode=periode,
             etat="A1",
-            contrat_json=payload.contrat,
+            contrat_json=contrat,
         )
         session.add(dossier)
         session.commit()
@@ -399,6 +427,43 @@ def creer_dossier(payload: CreationDossierRequest):
             etat=dossier.etat,
             triggers_disponibles=sm.triggers_disponibles(),
         )
+    finally:
+        session.close()
+
+
+@app.get("/salaries", response_model=list[SalarieConnu])
+def lister_salaries():
+    """Liste les salariés distincts déjà connus, pour l'écran 0 ("salarié
+    déjà connu" vs "nouveau"). Pas de table Salarie séparée dans le
+    modèle actuel (cf. db/models.py) : un salarié = un matricule déjà
+    utilisé sur au moins un dossier. Regroupement par matricule seul
+    (pas matricule+prénom+nom) : un dossier avec matricule renseigné a
+    forcément prénom/nom cohérents, donc le matricule seul suffit comme
+    clé d'unicité et évite de dupliquer un même salarié si son
+    prénom/nom a été ressaisi avec une variante entre deux dossiers.
+    Un dossier sans matricule ne peut de toute façon pas être référencé
+    via POST /dossiers::matricule_reference, donc il est exclu ici."""
+    session = SessionLocal()
+    try:
+        rows = (
+            session.query(Dossier)
+            .filter(Dossier.matricule.isnot(None))
+            .order_by(Dossier.matricule, Dossier.created_at.desc())
+            .all()
+        )
+        derniers: dict[str, Dossier] = {}
+        for dossier in rows:
+            derniers.setdefault(dossier.matricule, dossier)
+        return [
+            SalarieConnu(
+                matricule=d.matricule,
+                prenom=d.prenom,
+                nom=d.nom,
+                contrat=d.contrat_json,
+                dernier_dossier_id=d.id,
+            )
+            for d in derniers.values()
+        ]
     finally:
         session.close()
 

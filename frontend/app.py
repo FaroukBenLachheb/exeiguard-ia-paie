@@ -55,6 +55,14 @@ import streamlit as st
 
 ORCHESTRATEUR_URL = os.environ.get("ORCHESTRATEUR_URL", "http://localhost:8000")
 RAG_URL = os.environ.get("RAG_URL", "http://localhost:8001")
+# extracteur-evp n'a jamais de port publié sur l'hôte (cf.
+# docker-compose.dev.yml, "expose" seulement, contrairement à
+# orchestrateur/rag ci-dessus) : le défaut ci-dessous ne fonctionne donc
+# qu'en conteneur (nom de service Docker), où docker-compose.dev.yml le
+# surcharge explicitement. Un lancement natif de ce fichier (hors
+# conteneur) devra publier temporairement ce port et surcharger cette
+# variable pour utiliser l'écran 0 "Nouveau salarié" (extraction PDF).
+EXTRACTEUR_EVP_URL = os.environ.get("EXTRACTEUR_EVP_URL", "http://extracteur-evp:8000")
 HTTP_TIMEOUT = 15.0
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -66,7 +74,7 @@ _FIXTURES_DIR = _ROOT / "tests" / "fixtures"
 # du pipeline — cf. ecran_enregistrement()).
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
-from shared.schemas import ContratTravail, StatutSalarie  # noqa: E402
+from shared.schemas import ContratTravail  # noqa: E402
 
 st.set_page_config(page_title="Exeiguard — Pilotage du pipeline paie", layout="wide")
 
@@ -302,119 +310,132 @@ def transitionner(action: str, acteur: str, commentaire: str | None = None) -> t
 # le dossier (POST /dossiers) avec ce seul contrat, evp=None : le dossier
 # existe en base, en A1, sans aucune donnée EVP tant que l'écran 1 n'a
 # pas été utilisé.
-
-TYPES_CONTRAT = ["CDI", "CDD"]
-STATUTS = [s.value for s in StatutSalarie]
-
-
-def _contrat_depuis_formulaire() -> dict:
-    """Construit le dict ContratTravail à partir des widgets du formulaire
-    de saisie manuelle (valeurs déjà dans st.session_state via les clés
-    des widgets, préfixées "c0_")."""
-    g = st.session_state
-    return {
-        "matricule": None,
-        "prenom": g.get("c0_prenom", ""),
-        "nom": g.get("c0_nom") or None,
-        "nationalite": g.get("c0_nationalite") or None,
-        "adresse": g.get("c0_adresse") or None,
-        "date_naissance": g.get("c0_date_naissance").isoformat() if g.get("c0_date_naissance") else None,
-        "nir": g.get("c0_nir") or None,
-        "poste": g.get("c0_poste", ""),
-        "date_effet": g.get("c0_date_effet").isoformat(),
-        "type_contrat": g.get("c0_type_contrat", "CDI"),
-        "convention_collective": g.get("c0_convention_collective", "SYNTEC"),
-        "statut": g.get("c0_statut", "CADRE"),
-        "position": g.get("c0_position", ""),
-        "coefficient": g.get("c0_coefficient", 130),
-        "remuneration_annuelle_brute": g.get("c0_remuneration_annuelle", 0.0),
-        "remuneration_mensuelle_brute": g.get("c0_remuneration_mensuelle", 0.0),
-        "heures_mensuelles": g.get("c0_heures_mensuelles", 151.67),
-        "periode_essai_mois": g.get("c0_periode_essai_mois") or None,
-        "periode_essai_renouvelable": g.get("c0_periode_essai_renouvelable", False),
-        "rtt_par_an": g.get("c0_rtt_par_an", 10),
-        "periode_reference_conges": g.get("c0_periode_reference_conges", "01/06 au 31/05"),
-        "clause_non_concurrence": g.get("c0_clause_non_concurrence", False),
-        "duree_non_concurrence_mois": g.get("c0_duree_non_concurrence_mois") or None,
-        "indemnite_non_concurrence_mois_salaire": g.get("c0_indemnite_non_concurrence") or None,
-        "clause_formation": g.get("c0_clause_formation", False),
-        "duree_engagement_formation_mois": g.get("c0_duree_formation_mois") or None,
-        "lieu_travail": g.get("c0_lieu_travail", ""),
-        "delai_justification_absence_heures": g.get("c0_delai_justification", 24),
-        "organisme_justification_absence": g.get("c0_organisme_justification") or None,
-        "date_signature": g.get("c0_date_signature").isoformat(),
-        "lieu_signature": g.get("c0_lieu_signature") or None,
-    }
+#
+# JOUR 4 : la saisie manuelle et les cas de test (fixtures) sont
+# remplacés par le cœur du scénario de démo CEO — soit un salarié DÉJÀ
+# CONNU (contrat recopié depuis son dernier dossier, GET /salaries), soit
+# un NOUVEAU salarié dont le contrat est extrait automatiquement de son
+# PDF réel (POST /extraire-contrat sur extracteur-evp, parsing
+# déterministe par libellé + fallback LLM sous le seuil de confiance —
+# cf. extracteur-evp/app/parsers/contrat_parser.py). Dans les deux cas,
+# c'est toujours l'humain qui valide (clic explicite) avant que le
+# contrat ne devienne la contrainte de référence du dossier — même
+# principe que les fenêtres de décision de l'écran 2.
 
 
-def _formulaire_contrat_manuel():
-    st.markdown("**Identité**")
-    col1, col2, col3 = st.columns(3)
-    col1.text_input("Prénom", key="c0_prenom")
-    col2.text_input("Nom", key="c0_nom")
-    col3.text_input("Nationalité", key="c0_nationalite")
-    col1, col2 = st.columns(2)
-    col1.text_input("Adresse", key="c0_adresse")
-    col2.date_input("Date de naissance", value=None, key="c0_date_naissance")
-    st.text_input("NIR", key="c0_nir")
+def _seuil_tonalite(confiance: float) -> str:
+    if confiance >= 0.8:
+        return "succes"
+    if confiance >= 0.5:
+        return "attention"
+    return "erreur"
 
-    st.markdown("**Poste et classification**")
-    col1, col2, col3 = st.columns(3)
-    col1.text_input("Poste", key="c0_poste")
-    col2.selectbox("Type de contrat", TYPES_CONTRAT, key="c0_type_contrat")
-    col3.text_input("Convention collective", value="SYNTEC", key="c0_convention_collective")
-    col1, col2, col3 = st.columns(3)
-    col1.selectbox("Statut", STATUTS, key="c0_statut")
-    col2.text_input("Position (grille SYNTEC)", value="2.2", key="c0_position")
-    col3.number_input("Coefficient", min_value=1, value=130, step=10, key="c0_coefficient")
-    st.date_input("Date d'effet", value=date.today(), key="c0_date_effet")
 
-    st.markdown("**Rémunération**")
-    col1, col2, col3 = st.columns(3)
-    col1.number_input(
-        "Rémunération annuelle brute (€)", min_value=0.0, value=40000.0, step=100.0, key="c0_remuneration_annuelle"
+def _ecran_salarie_connu():
+    ok, salaries = api_get(f"{ORCHESTRATEUR_URL}/salaries")
+    if not ok:
+        _banniere(str(salaries), "erreur")
+        return
+    if not salaries:
+        _banniere("Aucun salarié déjà connu dans le système — utilisez « Nouveau salarié ».", "attention")
+        return
+
+    labels = [
+        f"{s['prenom']} {s.get('nom') or ''} — {s['contrat'].get('poste', '?')} (matricule {s['matricule']})".strip()
+        for s in salaries
+    ]
+    choix = st.selectbox("Salarié déjà connu", options=range(len(salaries)), format_func=lambda i: labels[i])
+    salarie = salaries[choix]
+    with st.expander("Voir le contrat de ce salarié (dernier dossier connu)"):
+        st.json(salarie["contrat"])
+
+    if st.button("Créer le dossier pour ce salarié", type="primary"):
+        payload = {"matricule_reference": salarie["matricule"], "evp": None}
+        ok, resultat = api_post(f"{ORCHESTRATEUR_URL}/dossiers", json=payload)
+        if not ok:
+            _banniere(str(resultat), "erreur")
+            return
+        st.session_state.dossier_id = resultat["id"]
+        _banniere(
+            f"Dossier {resultat['id']} créé pour {resultat['prenom']} (état initial {resultat['etat']}), "
+            "contrat recopié depuis son dernier dossier. Rendez-vous sur l'écran « 1. Dépôt EVP ».",
+            "succes",
+        )
+
+
+def _ecran_nouveau_salarie():
+    upload = st.file_uploader("Contrat de travail (PDF)", type=["pdf"])
+    if upload is not None and st.button("Extraire les données du contrat", type="primary"):
+        ok, resultat = api_post(
+            f"{EXTRACTEUR_EVP_URL}/extraire-contrat",
+            files={"fichier": (upload.name, upload.getvalue(), "application/pdf")},
+        )
+        if not ok:
+            _banniere(str(resultat), "erreur")
+            return
+        st.session_state.c0_contrat_extrait = resultat["contrat"]
+        st.session_state.c0_confiance_par_champ = resultat["confiance_par_champ"]
+        st.session_state.c0_llm_utilise = resultat["llm_utilise"]
+        st.session_state.c0_champs_completes_par_llm = resultat["champs_completes_par_llm"]
+
+    contrat_extrait = st.session_state.get("c0_contrat_extrait")
+    if not contrat_extrait:
+        return
+
+    confiances = st.session_state.get("c0_confiance_par_champ") or {}
+    completes_llm = set(st.session_state.get("c0_champs_completes_par_llm") or [])
+
+    st.subheader("Données extraites du contrat")
+    st.caption(
+        "Extraction déterministe par libellé de section (jamais par numéro d'article fixe), "
+        "complétée si besoin par un modèle de langage pour les seuls champs à faible confiance. "
+        "Vérifiez chaque valeur avant de confirmer."
     )
-    col2.number_input(
-        "Rémunération mensuelle brute (€)",
-        min_value=0.0,
-        value=round(st.session_state.get("c0_remuneration_annuelle", 40000.0) / 12, 2),
-        step=10.0,
-        key="c0_remuneration_mensuelle",
-        help="Doit être cohérent avec annuel/12 (tolérance ±2€, vérifié par ContratTravail à l'enregistrement).",
-    )
-    col3.number_input("Heures mensuelles", min_value=0.0, value=151.67, step=0.01, key="c0_heures_mensuelles")
-
-    st.markdown("**Période d'essai et congés**")
-    col1, col2, col3 = st.columns(3)
-    col1.number_input("Période d'essai (mois, 0 = aucune)", min_value=0, value=0, key="c0_periode_essai_mois")
-    col2.checkbox("Renouvelable", key="c0_periode_essai_renouvelable")
-    col3.number_input("RTT par an", min_value=0, value=10, key="c0_rtt_par_an")
-    st.text_input("Période de référence congés", value="01/06 au 31/05", key="c0_periode_reference_conges")
-
-    st.markdown("**Clauses particulières**")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.checkbox("Clause de non-concurrence", key="c0_clause_non_concurrence")
-        st.number_input(
-            "Durée non-concurrence (mois, si clause cochée)", min_value=0, value=0, key="c0_duree_non_concurrence_mois"
-        )
-        st.number_input(
-            "Indemnité non-concurrence (mois de salaire)", min_value=0, value=0, key="c0_indemnite_non_concurrence"
-        )
-    with col2:
-        st.checkbox("Clause de formation", key="c0_clause_formation")
-        st.number_input(
-            "Durée engagement formation (mois, si clause cochée)", min_value=0, value=0, key="c0_duree_formation_mois"
+    if st.session_state.get("c0_llm_utilise"):
+        _banniere(
+            "Le modèle de langage a été sollicité pour compléter les champs marqués ci-dessous "
+            "(confiance parsing initial insuffisante).",
+            "info",
         )
 
-    st.markdown("**Lieu et signature**")
-    col1, col2 = st.columns(2)
-    col1.text_input("Lieu de travail", key="c0_lieu_travail")
-    col2.number_input("Délai justification absence (heures)", min_value=0, value=24, key="c0_delai_justification")
-    st.text_input("Organisme de justification d'absence", key="c0_organisme_justification")
-    col1, col2 = st.columns(2)
-    col1.date_input("Date de signature", value=date.today(), key="c0_date_signature")
-    col2.text_input("Lieu de signature", key="c0_lieu_signature")
+    for champ, valeur in contrat_extrait.items():
+        if champ not in confiances:
+            continue
+        confiance = confiances[champ]
+        origine = (
+            f" — Complété par le modèle de langage (confiance parsing initial insuffisante)"
+            if champ in completes_llm
+            else ""
+        )
+        _banniere(f"{champ} : {valeur!r} — confiance {confiance:.2f}{origine}", _seuil_tonalite(confiance))
+
+    matricule = st.text_input("Matricule (identifiant interne du dossier)", key="c0_matricule_pdf")
+
+    if st.button("Confirmer et créer le dossier", type="primary"):
+        try:
+            contrat_valide = ContratTravail(**contrat_extrait)
+        except Exception as exc:
+            _banniere(f"Contrat invalide ou incomplet : {exc}", "erreur")
+            return
+
+        payload = {
+            "matricule": matricule or None,
+            "contrat": contrat_valide.model_dump(mode="json"),
+            "evp": None,
+        }
+        ok, resultat = api_post(f"{ORCHESTRATEUR_URL}/dossiers", json=payload)
+        if not ok:
+            _banniere(str(resultat), "erreur")
+            return
+
+        st.session_state.dossier_id = resultat["id"]
+        for cle in ("c0_contrat_extrait", "c0_confiance_par_champ", "c0_llm_utilise", "c0_champs_completes_par_llm"):
+            st.session_state.pop(cle, None)
+        _banniere(
+            f"Salarié enregistré — dossier {resultat['id']} — état initial {resultat['etat']} "
+            f"({resultat['prenom']}). Rendez-vous sur l'écran « 1. Dépôt EVP ».",
+            "succes",
+        )
 
 
 def ecran_enregistrement():
@@ -438,59 +459,12 @@ def ecran_enregistrement():
         return
     _banniere("Orchestrateur joignable.", "succes")
 
-    mode = st.radio(
-        "Origine du contrat", ["Cas de test (démo rapide)", "Saisie manuelle"], horizontal=True
-    )
+    mode = st.radio("Salarié", ["Salarié déjà connu", "Nouveau salarié"], horizontal=True)
 
-    contrat_dict: dict | None = None
-    matricule_defaut = ""
-
-    if mode == "Cas de test (démo rapide)":
-        fixtures = lister_fixtures()
-        if not fixtures:
-            _banniere("Aucun cas de test trouvé dans tests/fixtures/.", "attention")
-            return
-        labels = [f"{'[Cas réel] ' if '_reel' in f.stem else ''}{f.stem}" for f in fixtures]
-        choix = st.selectbox("Cas de test", options=range(len(fixtures)), format_func=lambda i: labels[i])
-        fixture_path = fixtures[choix]
-        cas = charger_fixture(fixture_path)
-        st.caption(cas.get("description", ""))
-        with st.expander("Voir le contrat de ce cas"):
-            st.json(cas["contrat"])
-        contrat_dict = cas["contrat"]
-        matricule_defaut = cas.get("id", "")
+    if mode == "Salarié déjà connu":
+        _ecran_salarie_connu()
     else:
-        with st.container(border=True):
-            _formulaire_contrat_manuel()
-
-    matricule = st.text_input("Matricule (identifiant interne du dossier)", value=matricule_defaut)
-
-    if st.button("Enregistrer le salarié", type="primary"):
-        if mode != "Cas de test (démo rapide)":
-            contrat_dict = _contrat_depuis_formulaire()
-
-        try:
-            contrat_valide = ContratTravail(**contrat_dict)
-        except Exception as exc:
-            _banniere(f"Contrat invalide : {exc}", "erreur")
-            return
-
-        payload = {
-            "matricule": matricule or None,
-            "contrat": contrat_valide.model_dump(mode="json"),
-            "evp": None,
-        }
-        ok, resultat = api_post(f"{ORCHESTRATEUR_URL}/dossiers", json=payload)
-        if not ok:
-            _banniere(str(resultat), "erreur")
-            return
-
-        st.session_state.dossier_id = resultat["id"]
-        _banniere(
-            f"Salarié enregistré — dossier {resultat['id']} — état initial {resultat['etat']} "
-            f"({resultat['prenom']}). Rendez-vous sur l'écran « 1. Dépôt EVP ».",
-            "succes",
-        )
+        _ecran_nouveau_salarie()
 
 
 # --------------------------------------------------------------------------

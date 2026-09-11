@@ -203,6 +203,10 @@ services:
     environment:
       ORCHESTRATEUR_URL: http://orchestrateur:8000
       RAG_URL: http://rag:8000
+      # JOUR 4 : écran 0 "Nouveau salarié", appelle POST /extraire-contrat
+      # directement sur extracteur-evp (jamais publié sur l'hôte, cf. son
+      # service ci-dessus - uniquement joignable via le réseau Docker).
+      EXTRACTEUR_EVP_URL: http://extracteur-evp:8000
     ports:
       - "127.0.0.1:8501:8501"
     # Meme logique de securite que qdrant/llm-server ci-dessus : accessible

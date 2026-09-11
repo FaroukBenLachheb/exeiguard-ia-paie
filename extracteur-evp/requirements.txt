@@ -3,3 +3,8 @@ uvicorn[standard]>=0.29
 openpyxl>=3.1
 pydantic>=2.7,<3
 python-multipart>=0.0.9
+# Parsing du contrat de travail PDF (app/parsers/contrat_parser.py),
+# même bibliothèque que rag/ (rag/requirements.txt) pour rester cohérent.
+pdfplumber>=0.11,<1
+# Appel Ollama pour le fallback LLM (app/parsers/contrat_llm_fallback.py).
+httpx>=0.27,<1

@@ -11,8 +11,24 @@ from pydantic import BaseModel
 
 class CreationDossierRequest(BaseModel):
     matricule: Optional[str] = None
-    contrat: dict[str, Any]  # ContratTravail.model_dump() côté client
+    # Optionnel désormais (JOUR 4, écran 0 "salarié déjà connu") : soit un
+    # contrat complet (ContratTravail.model_dump() côté client), soit
+    # `matricule_reference` seul, auquel cas le contrat est recopié
+    # depuis le dernier dossier connu portant ce matricule (cf.
+    # orchestrateur/app/main.py::creer_dossier). Au moins l'un des deux
+    # est requis - vérifié dans la route, pas ici, pour renvoyer un 400
+    # explicite plutôt qu'une 422 générique de validation Pydantic.
+    contrat: Optional[dict[str, Any]] = None
+    matricule_reference: Optional[str] = None
     evp: Optional[dict[str, Any]] = None  # EVPMensuel.model_dump(), optionnel à la création
+
+
+class SalarieConnu(BaseModel):
+    matricule: str
+    prenom: str
+    nom: Optional[str]
+    contrat: dict[str, Any]
+    dernier_dossier_id: str
 
 
 class DossierResponse(BaseModel):
