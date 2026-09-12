@@ -34,7 +34,7 @@ OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "llm-server")
 OLLAMA_PORT = os.environ.get("OLLAMA_PORT", "11434")
 OLLAMA_MODEL_FALLBACK = os.environ.get("OLLAMA_MODEL_FALLBACK", "mistral:7b-instruct-q4_K_M")
 OLLAMA_BASE_URL = f"http://{OLLAMA_HOST}:{OLLAMA_PORT}"
-OLLAMA_TIMEOUT = float(os.environ.get("OLLAMA_FALLBACK_TIMEOUT", "30.0"))
+OLLAMA_TIMEOUT = float(os.environ.get("OLLAMA_FALLBACK_TIMEOUT", "60.0"))
 
 # Score attribué à un champ complété par le LLM : toujours < SEUIL_FALLBACK_LLM
 # (jamais 1.0, réservé à l'extraction déterministe avec libellé exact) pour

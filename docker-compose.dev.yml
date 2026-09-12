@@ -115,6 +115,13 @@ services:
     # seuls les autres conteneurs du reseau docker-compose y accedent
     # (endpoint compatible OpenAI sur http://llm-server:11434/v1, voir
     # llm/README.md).
+    deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            capabilities: [gpu]
+            count: 1
     networks:
       - exeiguard_net
     healthcheck:
