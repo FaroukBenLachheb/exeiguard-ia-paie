@@ -107,6 +107,13 @@ services:
 
   llm-server:
     image: ollama/ollama:latest
+    deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            capabilities: [gpu]
+            count: 1
     volumes:
       - ollama_models:/root/.ollama
     expose:
@@ -115,13 +122,6 @@ services:
     # seuls les autres conteneurs du reseau docker-compose y accedent
     # (endpoint compatible OpenAI sur http://llm-server:11434/v1, voir
     # llm/README.md).
-    deploy:
-    resources:
-      reservations:
-        devices:
-          - driver: nvidia
-            capabilities: [gpu]
-            count: 1
     networks:
       - exeiguard_net
     healthcheck:
