@@ -1,8 +1,11 @@
-# docker-compose.dev.yml — environnement de developpement
-#
-# Sert a valider que chaque service se construit et demarre correctement
-# en local, en preparation de l'integration sur la VM GPU (pas de GPU en
-# local : la reservation GPU de llm-server reste commentee ci-dessous).
+# docker-compose.dev.yml — environnement de developpement ET fichier
+# reellement deploye sur la VM GPU cible (OVH, NVIDIA L4 24 Go) pour la
+# demo, en l'absence d'un docker-compose.yml (Phase 9, squelette Traefik)
+# a jour avec les services applicatifs. La reservation GPU de llm-server
+# est donc active (voir ce service ci-dessous) : un `docker compose up`
+# local sans GPU/NVIDIA Container Toolkit echouera sur cette reservation
+# au demarrage du conteneur (attendu, distinct d'une erreur de syntaxe
+# YAML - `docker compose config` doit rester valide dans les deux cas).
 #
 # JOUR 1 (cablage reel du pipeline, verifie en local le 10/09) :
 # extracteur-evp (POST /extraire), compliance-validation (POST /evaluer)
@@ -107,13 +110,18 @@ services:
 
   llm-server:
     image: ollama/ollama:latest
+    # Reservation GPU active : ce fichier (docker-compose.dev.yml) est
+    # celui reellement deploye sur la VM GPU cible (OVH, NVIDIA L4 24 Go,
+    # NVIDIA Container Toolkit installe sur l'hote) pour la demo - pas
+    # seulement un fichier de dev local. docker-compose.yml (Phase 9,
+    # squelette Traefik) ne contient pas encore les services applicatifs.
     deploy:
-    resources:
-      reservations:
-        devices:
-          - driver: nvidia
-            capabilities: [gpu]
-            count: 1
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+              count: 1
     volumes:
       - ollama_models:/root/.ollama
     expose:
@@ -130,19 +138,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
-    #
-    # Reservation GPU : actif uniquement sur la VM GPU cible (OVH, NVIDIA
-    # L4 24 Go) avec le NVIDIA Container Toolkit installe sur l'hote. Reste
-    # commente ici car il n'y a pas de GPU/toolkit en local : le decommenter
-    # ferait echouer `docker compose up` en dev. Voir docker-compose.yml
-    # (Phase 9) pour la version active sur la VM cible.
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           capabilities: [gpu]
-    #           count: 1
 
   qdrant:
     image: qdrant/qdrant:latest
