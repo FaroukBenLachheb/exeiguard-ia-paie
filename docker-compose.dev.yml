@@ -39,6 +39,22 @@ services:
       timeout: 3s
       retries: 5
 
+  adminer:
+    # Interface web PostgreSQL, TEMPORAIRE pour la phase de test/demo (a
+    # retirer une fois celle-ci terminee) : facilite l'inspection directe
+    # de la base sans passer par psql. Meme regle de securite que
+    # qdrant/llm-server ci-dessous : port publie sur 127.0.0.1 uniquement,
+    # jamais 0.0.0.0, accessible depuis l'exterieur uniquement via tunnel
+    # SSH.
+    image: adminer:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    networks:
+      - exeiguard_net
+    depends_on:
+      - postgres
+
   orchestrateur:
     build:
       context: .
