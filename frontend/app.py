@@ -42,7 +42,9 @@ import json
 import os
 import sys
 from datetime import date
+from enum import Enum
 from pathlib import Path
+from typing import get_args
 
 import httpx
 import openpyxl
@@ -331,6 +333,63 @@ def _seuil_tonalite(confiance: float) -> str:
     return "erreur"
 
 
+def _type_attendu_contrat(champ: str) -> type | None:
+    """Type Python attendu par ContratTravail pour ce champ (Optional[X]
+    déballé en X), pour choisir le bon widget de saisie manuelle."""
+    info = ContratTravail.model_fields.get(champ)
+    if info is None:
+        return None
+    annotation = info.annotation
+    args = get_args(annotation)
+    if args and type(None) in args:
+        autres = [a for a in args if a is not type(None)]
+        annotation = autres[0] if len(autres) == 1 else annotation
+    return annotation
+
+
+def _widget_correction_manuelle(champ: str, valeur_actuelle):
+    """Champ de saisie manuelle éditable pour un champ dont l'extraction a
+    totalement échoué (confiance 0, y compris après rejet du fallback LLM
+    par la validation de type - cf. contrat_llm_fallback.py). Cohérent avec
+    le principe du projet : validation humaine avant qu'une donnée ne
+    devienne une contrainte de référence, ici appliquée au cas où
+    l'extraction automatique n'a rien pu proposer, plutôt que de laisser
+    l'utilisateur découvrir un crash Pydantic après coup au clic sur
+    « Confirmer et créer le dossier »."""
+    attendu = _type_attendu_contrat(champ)
+    cle = f"c0_correction_{champ}"
+
+    if attendu is bool:
+        return st.checkbox(f"Valeur pour « {champ} »", value=bool(valeur_actuelle), key=cle)
+    if attendu in (int, float):
+        saisie = st.text_input(
+            f"Valeur pour « {champ} » (laisser vide si non applicable)", value="", key=cle
+        )
+        if not saisie.strip():
+            return None
+        try:
+            nombre = float(saisie.strip().replace(",", "."))
+        except ValueError:
+            st.caption(f"⚠ « {saisie} » n'est pas un nombre valide pour ce champ.")
+            return None
+        return int(nombre) if attendu is int else nombre
+    if attendu is date:
+        saisie_date = st.date_input(f"Valeur pour « {champ} »", value=None, key=cle)
+        return saisie_date.isoformat() if saisie_date else None
+    if isinstance(attendu, type) and issubclass(attendu, Enum):
+        options = ["— non renseigné —"] + [e.value for e in attendu]
+        choix = st.selectbox(f"Valeur pour « {champ} »", options=options, key=cle)
+        return None if choix == options[0] else choix
+    args_litteral = get_args(attendu) if attendu is not None else ()
+    if args_litteral and all(isinstance(a, str) for a in args_litteral):
+        options = ["— non renseigné —"] + list(args_litteral)
+        choix = st.selectbox(f"Valeur pour « {champ} »", options=options, key=cle)
+        return None if choix == options[0] else choix
+
+    saisie_texte = st.text_input(f"Valeur pour « {champ} »", value="", key=cle)
+    return saisie_texte.strip() or None
+
+
 def _ecran_salarie_connu():
     ok, salaries = api_get(f"{ORCHESTRATEUR_URL}/salaries")
     if not ok:
@@ -398,6 +457,7 @@ def _ecran_nouveau_salarie():
             "info",
         )
 
+    corrections_manuelles = {}
     for champ, valeur in contrat_extrait.items():
         if champ not in confiances:
             continue
@@ -408,12 +468,15 @@ def _ecran_nouveau_salarie():
             else ""
         )
         _banniere(f"{champ} : {valeur!r} — confiance {confiance:.2f}{origine}", _seuil_tonalite(confiance))
+        if confiance == 0:
+            corrections_manuelles[champ] = _widget_correction_manuelle(champ, valeur)
 
     matricule = st.text_input("Matricule (identifiant interne du dossier)", key="c0_matricule_pdf")
 
     if st.button("Confirmer et créer le dossier", type="primary"):
+        contrat_corrige = {**contrat_extrait, **corrections_manuelles}
         try:
-            contrat_valide = ContratTravail(**contrat_extrait)
+            contrat_valide = ContratTravail(**contrat_corrige)
         except Exception as exc:
             _banniere(f"Contrat invalide ou incomplet : {exc}", "erreur")
             return
